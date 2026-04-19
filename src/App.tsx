@@ -1,0 +1,821 @@
+/**
+ * @license
+ * SPDX-License-Identifier: Apache-2.0
+ */
+
+import React, { useState, useEffect, useCallback } from 'react';
+import { motion, AnimatePresence } from 'motion/react';
+import { Shield, Sword, Zap, Trash2, Layers, ScrollText, Heart, RotateCcw, Coins } from 'lucide-react';
+import { GameState, Card, MapNode, Enemy, Relic, Potion } from './types';
+import { createInitialState, startCombat, resolveEnemyTurn, triggerRelics, shuffle, generateShopInventory } from './utils';
+import { ENEMIES, ELITE_ENEMIES, BOSS_ENEMIES, CHARACTERS, CharacterDefinition } from './constants';
+import CardComponent from './components/CardComponent';
+import EnemyComponent from './components/EnemyComponent';
+import MapComponent from './components/MapComponent';
+import { RestView, EventView, ShopView, StartView, PileOverlay } from './components/SpecialViews';
+import CharacterSelectView from './components/CharacterSelectView';
+import RewardView from './components/RewardView';
+import { StatusEffectList } from './components/StatusEffects';
+import { EVENTS, START_EVENTS } from './constants';
+import { getStartingDeck, getRewardPool } from './lib/cardLibrary';
+import { RELICS } from './lib/relicLibrary';
+import { SpriteRenderer } from './components/SpriteRenderer';
+
+export default function App() {
+  const [state, setState] = useState<GameState>(createInitialState());
+  const [viewingPile, setViewingPile] = useState<'deck' | 'draw' | 'discard' | null>(null);
+  const [hoveredInfo, setHoveredInfo] = useState<{
+    title: string;
+    description: string;
+    x: number;
+    y: number;
+    anchorX: number;
+    side: 'top' | 'bottom';
+    targetTop: number;
+    targetBottom: number;
+  } | null>(null);
+
+  const handleMouseEnter = (e: React.MouseEvent, title: string, description: string) => {
+    const rect = e.currentTarget.getBoundingClientRect();
+    const windowWidth = window.innerWidth;
+    const tooltipWidth = 256; // Matching w-64
+    const padding = 12;
+
+    // Horizontal clamping
+    let x = rect.left + rect.width / 2;
+    // Ensure the box stays on screen
+    const minX = (tooltipWidth / 2) + padding;
+    const maxX = windowWidth - (tooltipWidth / 2) - padding;
+    const clampedX = Math.max(minX, Math.min(maxX, x));
+
+    setHoveredInfo({
+      title,
+      description,
+      x: clampedX,
+      y: rect.top - 10,
+      anchorX: x, // Original center for the arrow
+      side: rect.top < 150 ? 'bottom' : 'top', // Show below if too high
+      targetTop: rect.top,
+      targetBottom: rect.bottom
+    });
+  };
+
+  const handleMouseLeave = () => {
+    setHoveredInfo(null);
+  };
+
+  const handleSelectCharacter = (char: CharacterDefinition) => {
+    const classCards = getStartingDeck(char.class);
+    setState(prev => ({
+      ...prev,
+      view: 'Map',
+      player: {
+        class: char.class,
+        maxHp: char.maxHp,
+        hp: char.maxHp,
+        block: 0,
+        energy: 3,
+        maxEnergy: 3,
+        deck: classCards,
+        drawPile: [],
+        hand: [],
+        discardPile: [],
+        exhaustPile: [],
+        statusEffects: [],
+        relics: [char.relic],
+        potions: [],
+        maxPotions: 3
+      },
+      gold: char.gold,
+      logs: [`Started run with ${char.class}.`, `Gained relic: ${char.relic.name}.`, ...prev.logs]
+    }));
+  };
+
+  const handleUsePotion = (index: number) => {
+    setState(prev => {
+        if (!prev.player || prev.turn !== 'Player') return prev;
+        const potion = prev.player.potions[index];
+        if (!potion) return prev;
+
+        let newState = potion.effect(prev);
+        const newPotions = [...newState.player!.potions];
+        newPotions.splice(index, 1);
+        
+        return {
+            ...newState,
+            player: { ...newState.player!, potions: newPotions }
+        };
+    });
+  };
+
+  const handleEndTurn = useCallback(() => {
+    setState(prev => ({ ...prev, turn: 'Enemy' }));
+  }, []);
+
+  useEffect(() => {
+    if (state.turn === 'Enemy' && state.view === 'Combat') {
+      const timer = setTimeout(() => {
+        setState(prev => resolveEnemyTurn(prev));
+      }, 1000);
+      return () => clearTimeout(timer);
+    }
+  }, [state.turn, state.view]);
+
+  // Check for combat win/loss
+  useEffect(() => {
+    if (state.view === 'Combat' && state.enemies.length === 0 && state.player) {
+      // Trigger end of combat relics (like Burning Blood)
+      let finalState = triggerRelics(state, 'onCombatEnd');
+      
+      const rewardCards = shuffle(getRewardPool(state.player.class)).slice(0, 3);
+      const isEliteOrBoss = state.currentNodeId?.includes('Elite') || state.currentNodeId?.includes('Boss') || Math.random() < 0.2;
+      const randomRelic = isEliteOrBoss ? RELICS[Math.floor(Math.random() * RELICS.length)] : null;
+
+      setState(prev => ({
+        ...finalState,
+        view: 'Reward',
+        logs: [`Defeated enemies!`, ...finalState.logs],
+        reward: {
+          gold: 15 + Math.floor(Math.random() * 20),
+          relic: randomRelic,
+          cards: rewardCards
+        }
+      }));
+    }
+    if (state.view === 'Combat' && state.player && state.player.hp <= 0) {
+      setState(prev => ({ ...prev, view: 'GameOver' }));
+    }
+  }, [state.enemies.length, state.player?.hp, state.view, state.currentNodeId]);
+
+  const handleCollectGold = () => {
+    setState(prev => {
+        if (!prev.reward) return prev;
+        return {
+            ...prev,
+            gold: prev.gold + prev.reward.gold,
+            logs: [`Collected ${prev.reward.gold} Gold.`, ...prev.logs],
+            reward: { ...prev.reward, gold: 0 }
+        };
+    });
+  };
+
+  const handleCollectRelic = (relic: any) => {
+    setState(prev => {
+        if (!prev.player || !prev.reward) return prev;
+        return {
+            ...prev,
+            player: { ...prev.player, relics: [...prev.player.relics, relic] },
+            logs: [`Collected Relic: ${relic.name}.`, ...prev.logs],
+            reward: { ...prev.reward, relic: null }
+        };
+    });
+  };
+
+  const handleChooseCard = (card: Card) => {
+    setState(prev => {
+        if (!prev.player) return prev;
+        return {
+            ...prev,
+            player: { ...prev.player, deck: [...prev.player.deck, card] },
+            logs: [`Added ${card.name} to deck.`, ...prev.logs],
+            view: 'Map',
+            reward: null
+        };
+    });
+    handleFinishNode();
+  };
+
+  const handleSkipRewards = () => {
+    setState(prev => ({
+        ...prev,
+        view: 'Map',
+        reward: null
+    }));
+    handleFinishNode();
+  };
+
+  const [targetingCard, setTargetingCard] = useState<{card: Card, index: number} | null>(null);
+
+  const playCard = (card: Card, index: number, targetId?: string) => {
+    if (!state.player || state.player.energy < card.cost || state.turn !== 'Player' || card.type === 'Hex') return;
+
+    if (card.needsTarget && !targetId && state.enemies.length > 1) {
+        setTargetingCard({ card, index });
+        return; // Wait for target selection
+    } else if (card.needsTarget && !targetId && state.enemies.length === 1) {
+        targetId = state.enemies[0].id; // Auto target if only 1 enemy
+    }
+
+    setTargetingCard(null);
+
+    setState(prev => {
+      if (!prev.player) return prev;
+      let newState = card.effect(prev, targetId);
+      const newHand = [...newState.player!.hand];
+      newHand.splice(index, 1);
+      
+      const isPower = card.type === 'Power';
+      
+      newState = {
+        ...newState,
+        player: {
+          ...newState.player!,
+          energy: newState.player!.energy - card.cost,
+          hand: newHand,
+          discardPile: isPower ? newState.player!.discardPile : [...newState.player!.discardPile, card]
+        },
+        cardsPlayedThisTurn: [...newState.cardsPlayedThisTurn, card.id]
+      };
+      
+      // Remove permanently dead enemies right after card resolves
+      newState.enemies = newState.enemies.filter(e => e.hp > 0);
+
+      // Trigger card play relics
+      newState = triggerRelics(newState, 'onCardPlay', card);
+      
+      return newState;
+    });
+  };
+
+  const handleNodeClick = (node: MapNode) => {
+    if (node.type === 'Combat' || node.type === 'Elite' || node.type === 'Boss') {
+      const enemyPool = node.type === 'Boss' ? BOSS_ENEMIES : node.type === 'Elite' ? ELITE_ENEMIES : ENEMIES;
+      const randomEnemy = enemyPool[Math.floor(Math.random() * (enemyPool.length || 1))] || ENEMIES[0];
+      
+      setState(prev => ({
+        ...startCombat(prev, randomEnemy, node),
+        currentNodeId: node.id
+      }));
+    } else {
+        setState(prev => {
+            const nextView = node.type === 'Mystery' ? 'Event' : node.type === 'Rest' ? 'Rest' : node.type === 'Shop' ? 'Shop' : node.type === 'Start' ? 'Start' : 'Map';
+            let randomEvent = null;
+            let choices: any[] = [];
+            
+            if (nextView === 'Event') {
+               randomEvent = EVENTS[Math.floor(Math.random() * EVENTS.length)];
+               choices = shuffle(randomEvent.choices).slice(0, 3);
+            } else if (nextView === 'Start') {
+               randomEvent = START_EVENTS[Math.floor(Math.random() * START_EVENTS.length)];
+               choices = shuffle(randomEvent.choices).slice(0, 3);
+            }
+            
+            const newShopEnv = nextView === 'Shop' && prev.player ? generateShopInventory(prev.player) : null;
+            
+            return {
+                ...prev,
+                view: nextView as any,
+                currentEvent: randomEvent,
+                activeEventChoices: choices,
+                shopInventory: newShopEnv,
+                logs: [`Léptél: ${node.type}`, ...prev.logs],
+                currentNodeId: node.id
+            };
+        });
+    }
+  };
+
+  const handleEventChoice = (choiceIndex: number) => {
+    setState(prev => {
+      if (!prev.currentEvent || !prev.activeEventChoices[choiceIndex]) return prev;
+      const choice = prev.activeEventChoices[choiceIndex];
+      const newState = choice.effect(prev);
+      return {
+        ...newState,
+        view: 'Map', // Go back to map after event choice
+        currentEvent: null,
+        activeEventChoices: [],
+        logs: [`Esemény lezárva: ${choice.label}`, ...newState.logs],
+        map: newState.map.map(n => {
+           if (n.id === newState.currentNodeId) return { ...n, visited: true, reachable: false };
+           const node = newState.map.find(nodeRef => nodeRef.id === newState.currentNodeId)!;
+           if (node.connections.includes(n.id)) return { ...n, reachable: true };
+           return { ...n, reachable: false };
+        })
+      };
+    });
+  };
+
+  const handleFinishNode = (logMessage?: string, additionalStateUpdates?: Partial<GameState>) => {
+    setState(prev => {
+        const node = prev.map.find(n => n.id === prev.currentNodeId)!;
+        return {
+            ...prev,
+            ...additionalStateUpdates,
+            view: 'Map',
+            currentEvent: null,
+            logs: logMessage ? [logMessage, ...prev.logs] : (additionalStateUpdates?.logs || prev.logs),
+            map: prev.map.map(n => {
+                if (n.id === prev.currentNodeId) return { ...n, visited: true, reachable: false };
+                if (node.connections.includes(n.id)) return { ...n, reachable: true };
+                return { ...n, reachable: false };
+            })
+        };
+    });
+  };
+
+  const handleBuyCard = (card: Card, price: number) => {
+    setState(prev => {
+      if (!prev.player || !prev.shopInventory || prev.gold < price) return prev;
+      return {
+        ...prev,
+        gold: prev.gold - price,
+        player: { ...prev.player, deck: [...prev.player.deck, card] },
+        shopInventory: {
+          ...prev.shopInventory,
+          cards: prev.shopInventory.cards.filter(c => c.item.id !== card.id)
+        },
+        logs: [`Megvásároltad: ${card.name} (${price} Közpénz)`, ...prev.logs]
+      };
+    });
+  };
+
+  const handleBuyRelic = (relic: Relic, price: number) => {
+    setState(prev => {
+      if (!prev.player || !prev.shopInventory || prev.gold < price) return prev;
+      return {
+        ...prev,
+        gold: prev.gold - price,
+        player: { ...prev.player, relics: [...prev.player.relics, relic] },
+        shopInventory: {
+          ...prev.shopInventory,
+          relics: prev.shopInventory.relics.filter(r => r.item.id !== relic.id)
+        },
+        logs: [`Megvásároltad: ${relic.name} (${price} Közpénz)`, ...prev.logs]
+      };
+    });
+  };
+
+  const handleBuyPotion = (potion: Potion, price: number) => {
+    setState(prev => {
+      if (!prev.player || !prev.shopInventory || prev.gold < price || prev.player.potions.length >= prev.player.maxPotions) return prev;
+      return {
+        ...prev,
+        gold: prev.gold - price,
+        player: { ...prev.player, potions: [...prev.player.potions, potion] },
+        shopInventory: {
+          ...prev.shopInventory,
+          potions: prev.shopInventory.potions.filter(p => p.item.id !== potion.id)
+        },
+        logs: [`Megvásároltad: ${potion.name} (${price} Közpénz)`, ...prev.logs]
+      };
+    });
+  };
+
+  const handleRemoveCard = (price: number) => {
+    // In a full implementation, this would open a card selector view. 
+    // For now, we will pick a random non-strike/defend card if possible, else random card.
+    setState(prev => {
+        if (!prev.player || prev.gold < price || prev.player.deck.length === 0) return prev;
+        
+        let removedCard: Card;
+        const index = Math.floor(Math.random() * prev.player.deck.length);
+        removedCard = prev.player.deck[index];
+
+        const newDeck = [...prev.player.deck];
+        newDeck.splice(index, 1);
+
+        return {
+          ...prev,
+          gold: prev.gold - price,
+          player: { ...prev.player, deck: newDeck },
+          logs: [`Eltüntettél egy kártyát a Cégtemetőben: ${removedCard.name} (${price} Közpénz)`, ...prev.logs]
+        };
+    });
+  };
+
+  const handleRest = () => {
+    setState(prev => {
+      if (!prev.player) return prev;
+      return {
+        ...prev,
+        player: {
+          ...prev.player,
+          hp: Math.min(prev.player.maxHp, prev.player.hp + Math.floor(prev.player.maxHp * 0.3))
+        }
+      };
+    });
+    handleFinishNode('Rested at campfire. (+30% HP)');
+  };
+
+  return (
+    <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-yellow-500/30 overflow-x-hidden">
+        {state.view === 'Title' && (
+          <div className="min-h-screen flex flex-col items-center justify-center p-8 bg-bento-bg">
+            <motion.h1 
+              initial={{ y: -50 }}
+              animate={{ y: 0 }}
+              className="text-6xl md:text-9xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-white/10 mb-4 text-center md:text-left"
+            >
+              NER<br/>SCROLLER
+            </motion.h1>
+            <p className="text-bento-text-dim tracking-[0.3em] uppercase text-xs md:text-sm mb-12 font-medium text-center">Egy Kártyázós Közéleti Kaland</p>
+            
+            <motion.button
+              whileHover={{ scale: 1.1, letterSpacing: '0.2em' }}
+              whileTap={{ scale: 0.9 }}
+              onClick={() => setState(prev => ({ ...prev, view: 'CharacterSelect' }))}
+              className="px-12 py-4 bg-bento-accent text-white font-black text-xl tracking-widest uppercase transition-all hover:shadow-[0_0_30px_rgba(229,62,62,0.3)] rounded-lg border border-white/20"
+            >
+              Kampány Indítása
+            </motion.button>
+          </div>
+        )}
+
+        {state.view === 'CharacterSelect' && (
+          <div className="min-h-screen p-2 md:p-8">
+            <CharacterSelectView characters={CHARACTERS} onSelect={handleSelectCharacter} />
+          </div>
+        )}
+
+        {state.view === 'Map' && state.player && (
+          <div className="min-h-screen w-full p-4 md:p-8 flex flex-col items-center bg-bento-bg overflow-y-auto overflow-x-hidden">
+            <header className="w-full max-w-4xl flex flex-col md:flex-row justify-between items-center mb-8 bento-panel py-4 px-4 md:px-8 gap-4">
+              <div className="flex items-center gap-4 md:gap-8 w-full md:w-auto justify-between md:justify-start">
+                <div className="flex flex-col">
+                  <span className="text-[10px] uppercase tracking-wider text-bento-text-dim">Népszerűség</span>
+                  <div className="flex items-center gap-2">
+                    <Heart size={14} className="text-bento-accent fill-shadow" />
+                    <span className="text-sm md:text-xl font-mono font-bold">{state.player.hp}/{state.player.maxHp}</span>
+                  </div>
+                </div>
+                <button 
+                  onClick={() => setViewingPile('deck')}
+                  className="flex flex-col hover:bg-white/5 p-1 rounded transition-colors text-left"
+                >
+                  <span className="text-[10px] uppercase tracking-wider text-bento-text-dim">Program</span>
+                  <div className="flex items-center gap-2">
+                    <Layers size={14} className="text-blue-400" />
+                    <span className="text-sm md:text-xl font-mono font-bold">{state.player.deck.length}</span>
+                  </div>
+                </button>
+                <div className="flex flex-col">
+                  <span className="text-[10px] uppercase tracking-wider text-bento-text-dim">Közpénz</span>
+                  <div className="flex items-center gap-2">
+                    <Coins size={14} className="text-bento-gold" />
+                    <span className="text-sm md:text-xl font-mono font-bold">{state.gold}</span>
+                  </div>
+                </div>
+              </div>
+              <h2 className="text-lg md:text-xl font-black italic tracking-tighter text-white/20">{state.player.class.toUpperCase()} · I. CIKLUS</h2>
+            </header>
+
+            <div className="w-full max-w-4xl">
+              <MapComponent 
+                nodes={state.map} 
+                onNodeClick={handleNodeClick} 
+                currentNodeId={state.currentNodeId}
+              />
+            </div>
+
+            <div className="mt-8 w-full max-w-4xl bento-panel h-24 overflow-y-auto font-mono text-[10px] text-bento-text-dim transition-all hover:text-white">
+                {state.logs.map((log, i) => (
+                    <div key={i} className="mb-1">{`> ${log}`}</div>
+                ))}
+            </div>
+          </div>
+        )}
+
+        {state.view === 'Combat' && (
+          state.player && state.enemies ? (
+            <div className="min-h-screen w-full flex flex-col p-2 md:p-5 bg-bento-bg overflow-x-hidden">
+              <div className="grid grid-cols-1 md:grid-cols-12 md:grid-rows-[60px_1fr_220px] gap-2 md:gap-3 h-full overflow-hidden">
+                {/* Top Info Panels */}
+                <div className="bento-panel col-span-1 md:col-span-8 flex items-center gap-4 md:gap-6 p-4">
+                  <div className="flex flex-col flex-shrink-0">
+                    <span className="text-[10px] uppercase tracking-wider text-bento-text-dim">Körzet</span>
+                    <span className="font-bold text-sm md:text-base">{state.currentNodeId?.split('-')[1] || 1}</span>
+                  </div>
+                  <div className="flex-1">
+                     <div className="flex justify-between items-end mb-1">
+                        <span className="text-[10px] uppercase tracking-wider text-bento-text-dim">Népsz.</span>
+                        <span className="text-bento-accent font-bold text-xs md:text-sm">{(state.player?.hp ?? 0)} / {(state.player?.maxHp ?? 100)}</span>
+                     </div>
+                     <div className="h-2 md:h-3 w-full bg-slate-800 rounded-full overflow-hidden border border-white/5">
+                        <motion.div 
+                          initial={{ width: 0 }}
+                          animate={{ width: `${((state.player?.hp ?? 0) / (state.player?.maxHp ?? 1)) * 100}%` }}
+                          className="h-full bg-bento-accent" 
+                        />
+                     </div>
+                  </div>
+                  <div className="flex flex-col flex-shrink-0">
+                    <span className="text-[10px] uppercase tracking-wider text-bento-text-dim">Közpénz</span>
+                    <span className="text-bento-gold font-bold text-sm md:text-base">{state.gold ?? 0} m. Ft</span>
+                  </div>
+                </div>
+
+                <div className="bento-panel col-span-1 md:col-span-4 flex items-center justify-start md:justify-end gap-4 px-3 md:px-6 py-2">
+                  <div className="flex flex-col items-start md:items-end">
+                      <span className="text-[10px] uppercase tracking-wider text-bento-text-dim mb-1">Mutik</span>
+                      <div className="flex gap-1.5 md:gap-2">
+                        {(state.player?.relics || []).map((relic, i) => (
+                          <div 
+                            key={`${relic.id}-${i}`} 
+                            className="w-8 h-8 rounded bg-slate-700 border border-white/10 flex items-center justify-center group cursor-help flex-shrink-0"
+                            onMouseEnter={(e) => handleMouseEnter(e, relic.name, relic.description)}
+                            onMouseLeave={handleMouseLeave}
+                          >
+                            <Zap size={14} className="text-bento-energy" />
+                          </div>
+                        ))}
+                      </div>
+                  </div>
+                  
+                  <div className="h-full w-px bg-white/10 mx-2" />
+
+                  <div className="flex flex-col items-start md:items-end">
+                      <span className="text-[10px] uppercase tracking-wider text-bento-text-dim mb-1">Csúszópénzek ({(state.player?.potions || []).length}/{(state.player?.maxPotions || 3)})</span>
+                      <div className="flex gap-1.5 md:gap-2">
+                         {Array.from({ length: state.player?.maxPotions || 3 }).map((_, i) => {
+                            const potions = state.player?.potions || [];
+                            const potion = potions[i];
+                            if (!potion) {
+                                return <div key={`empty-pot-${i}`} className="w-8 h-8 rounded-full border border-dashed border-white/20 bg-black/50" />;
+                            }
+                            return (
+                              <button 
+                                  key={`pot-${i}`} 
+                                  onClick={() => handleUsePotion(i)}
+                                  onMouseEnter={(e) => handleMouseEnter(e, potion.name, potion.description)}
+                                  onMouseLeave={handleMouseLeave}
+                                  disabled={state.turn !== 'Player'}
+                                  className="w-8 h-8 rounded-full bg-blue-900 border border-blue-400 flex items-center justify-center group relative flex-shrink-0 hover:bg-blue-700 transition-colors"
+                              >
+                                  <span className="text-xs font-bold font-mono">P</span>
+                              </button>
+                            );
+                         })}
+                      </div>
+                  </div>
+                </div>
+
+                {/* Middle Combat Panel */}
+                <div className="bento-panel col-span-1 md:col-span-12 relative flex flex-col md:flex-row items-center justify-around bg-gradient-to-b from-transparent to-black/40 py-8 md:py-0 min-h-[400px] md:min-h-0">
+                  {state.player && (
+                    <div className="entity player flex flex-col items-center mb-8 md:mb-0">
+                        <div className="w-32 h-32 md:w-40 md:h-40 bg-slate-700/0 mb-3 flex items-center justify-center p-2 relative group">
+                            <div className="absolute inset-0 bg-bento-energy/0 group-hover:bg-bento-energy/20 rounded-full blur-xl transition-all" />
+                            <SpriteRenderer type={state.player.class} />
+                            <div className="absolute top-2 left-2 z-10 w-full pr-4">
+                              <StatusEffectList 
+                                effects={state.player.statusEffects || []}
+                                onHover={handleMouseEnter}
+                                onLeave={handleMouseLeave}
+                              />
+                            </div>
+                        </div>
+                        <div className="font-bold text-sm flex items-center gap-2">
+                            {state.player.hp} / {state.player.maxHp}
+                            {state.player.block > 0 && (
+                              <span className="bg-bento-block px-2 py-0.5 rounded text-[10px] flex items-center gap-1">
+                                <Shield size={10} fill="white" /> {state.player.block}
+                              </span>
+                            )}
+                        </div>
+                        <span className="text-[10px] uppercase tracking-widest text-bento-text-dim mt-1">A {state.player.class}</span>
+                    </div>
+                  )}
+
+                  <div className="flex flex-wrap gap-4 items-center justify-center relative px-2 max-w-full overflow-hidden">
+                      {targetingCard && (
+                          <div className="absolute -top-16 left-1/2 -translate-x-1/2 text-bento-accent font-black animate-pulse uppercase tracking-widest text-[10px] md:text-sm z-50 bg-black/80 px-4 py-2 rounded-full border border-bento-accent/30 shadow-2xl whitespace-nowrap">
+                              Kire nyomjuk rá? {targetingCard.card.name}
+                          </div>
+                      )}
+                      {(state.enemies || []).map(enemy => (
+                         <EnemyComponent 
+                             key={enemy.id} 
+                             enemy={enemy} 
+                             playerStatusEffects={state.player?.statusEffects || []}
+                             onClick={() => targetingCard && playCard(targetingCard.card, targetingCard.index, enemy.id)}
+                             onHover={handleMouseEnter}
+                             onLeave={handleMouseLeave}
+                         />
+                      ))}
+                      {(!state.enemies || state.enemies.length === 0) && (
+                        <div className="text-bento-text-dim uppercase tracking-tighter italic p-12 text-center">Népszavazás folyamatban...<br/><span className="text-[8px]">(Senki nincs a parlamentben)</span></div>
+                      )}
+                  </div>
+
+                  {/* Logs Overlay inside combat panel */}
+                  <div className="hidden lg:block absolute top-4 right-4 w-64 max-h-32 overflow-y-auto bg-black/40 backdrop-blur-sm rounded-lg p-3 border border-white/10 text-[10px] font-mono opacity-60 hover:opacity-100 transition-opacity">
+                      {(state.logs || []).slice(0, 4).map((log, i) => (
+                          <div key={i} className={`mb-1 ${i === 0 ? 'text-white' : 'text-white/40'}`}>{`> ${log}`}</div>
+                      ))}
+                  </div>
+                </div>
+
+                {/* Bottom Action Grid */}
+                <div className="bento-panel col-span-1 md:col-span-2 flex flex-row md:flex-col items-center justify-center relative overflow-hidden p-4 md:p-0">
+                  <div className="absolute inset-0 bg-radial-gradient from-teal-900/50 via-transparent to-transparent opacity-50 hidden md:block" />
+                  <span className="text-[10px] md:text-xs uppercase tracking-wider text-bento-text-dim relative z-10 mr-4 md:mr-0">Energia</span>
+                  <div className="text-3xl md:text-4xl font-black text-bento-energy drop-shadow-[0_0_10px_rgba(79,209,197,0.5)] relative z-10">
+                    {(state.player?.energy ?? 0)}/{(state.player?.maxEnergy ?? 3)}
+                  </div>
+                </div>
+
+                <div className="bento-panel col-span-1 md:col-span-8 flex items-center justify-start md:justify-center overflow-x-auto gap-3 py-6 px-12 md:px-20 relative group custom-scrollbar">
+                    <AnimatePresence mode="popLayout" initial={false}>
+                      {(state.player?.hand || []).map((card) => (
+                        <motion.div
+                          key={card.id}
+                          layout
+                          initial={{ y: 50, opacity: 0, scale: 0.8 }}
+                          animate={{ y: 0, opacity: 1, scale: 1 }}
+                          exit={{ y: -150, opacity: 0, scale: 1.1, transition: { duration: 0.3 } }}
+                          transition={{ 
+                            type: 'spring',
+                            stiffness: 400,
+                            damping: 35,
+                          }}
+                          className="flex-shrink-0 relative"
+                        >
+                          <CardComponent 
+                            card={card} 
+                            onClick={() => {
+                               const index = state.player?.hand.findIndex(c => c.id === card.id) ?? -1;
+                               if (index !== -1) playCard(card, index);
+                            }}
+                            disabled={(state.player?.energy ?? 0) < card.cost || state.turn !== 'Player'}
+                          />
+                          {targetingCard?.card.id === card.id && (
+                             <div className="absolute inset-0 bg-bento-accent/20 rounded-lg pointer-events-none border-2 border-bento-accent animate-pulse" />
+                          )}
+                        </motion.div>
+                      ))}
+                    </AnimatePresence>
+
+                    {/* End Turn Button */}
+                    <div className="md:absolute md:right-2 lg:right-6 z-20 flex-shrink-0">
+                      <motion.button
+                        whileHover={{ scale: 1.05, backgroundColor: '#ffffff' }}
+                        whileTap={{ scale: 0.95 }}
+                        onClick={handleEndTurn}
+                        disabled={state.turn !== 'Player'}
+                        className={`px-4 py-3 md:px-6 md:py-10 rounded-xl font-black tracking-widest uppercase transition-all shadow-xl border-2
+                          ${state.turn === 'Player' 
+                            ? 'bg-white text-black border-white hover:shadow-[0_0_30px_rgba(255,255,255,0.3)]' 
+                            : 'bg-white/5 text-white/20 border-white/5 cursor-not-allowed'}
+                          md:vertical-rl md:transform md:rotate-180 text-xs md:text-sm
+                        `}
+                      >
+                        {state.turn === 'Player' ? 'Kör Vége' : 'Központ...'}
+                      </motion.button>
+                    </div>
+                </div>
+
+                <div className="bento-panel col-span-1 md:col-span-2 flex flex-row md:flex-col gap-2 p-2 md:p-3 justify-center">
+                  <button 
+                    onClick={() => setViewingPile('draw')}
+                    className="flex-1 md:flex-none bg-slate-800/50 p-2 md:p-3 rounded text-center border border-white/5 hover:border-bento-gold/50 transition-colors group"
+                  >
+                    <div className="text-[10px] uppercase tracking-wider text-bento-text-dim mb-1 group-hover:text-bento-gold">Akták</div>
+                    <strong className="text-base md:text-xl font-mono">{(state.player?.drawPile || []).length}</strong>
+                  </button>
+                  <button 
+                    onClick={() => setViewingPile('discard')}
+                    className="flex-1 md:flex-none bg-slate-800/50 p-2 md:p-3 rounded text-center border border-white/5 hover:border-red-500/50 transition-colors group"
+                  >
+                    <div className="text-[10px] uppercase tracking-wider text-bento-text-dim mb-1 group-hover:text-red-400">Daráló</div>
+                    <strong className="text-base md:text-xl font-mono">{(state.player?.discardPile || []).length}</strong>
+                  </button>
+                </div>
+              </div>
+            </div>
+          ) : (
+            <div className="h-screen w-screen flex flex-col items-center justify-center p-8 text-center bg-bento-bg">
+               <h2 className="text-2xl font-black italic mb-4">Üres a parlament...</h2>
+               <p className="text-bento-text-dim text-sm mb-8">Hiba történt a csata betöltésekor. Várj egy pillanatot vagy indíts újra.</p>
+               <button onClick={() => setState(createInitialState())} className="px-6 py-3 bg-white text-black font-bold uppercase tracking-widest rounded-lg">Új választás kiírása</button>
+            </div>
+          )
+        )}
+
+        {state.view === 'GameOver' && (
+          <div className="min-h-screen flex flex-col items-center justify-center bg-bento-bg p-4">
+            <h1 className="text-6xl md:text-9xl font-black italic text-bento-accent mb-8 drop-shadow-[0_0_50px_rgba(229,62,62,0.5)] text-center">MEGBUKTÁL</h1>
+            <button 
+                onClick={() => setState(createInitialState())}
+                className="px-12 py-4 bg-white text-black font-black uppercase tracking-widest hover:scale-105 transition-transform rounded-lg text-center"
+            >
+                Új választás kiírása
+            </button>
+          </div>
+        )}
+
+        {state.view === 'Start' && state.currentEvent && (
+          <div className="min-h-screen bg-bento-bg p-4 md:p-0">
+            <StartView 
+              logs={state.logs}
+              event={state.currentEvent}
+              choices={state.activeEventChoices}
+              onChoose={handleEventChoice}
+              onBackToMap={() => handleFinishNode()}
+            />
+          </div>
+        )}
+
+        {state.view === 'Rest' && (
+          <div className="min-h-screen bg-bento-bg p-4 md:p-0">
+            <RestView logs={state.logs} onRest={handleRest} onBackToMap={() => handleFinishNode()} />
+          </div>
+        )}
+
+        {state.view === 'Event' && state.currentEvent && (
+          <div className="min-h-screen bg-bento-bg p-4 md:p-0">
+            <EventView 
+              logs={state.logs} 
+              event={state.currentEvent} 
+              choices={state.activeEventChoices}
+              onChoose={handleEventChoice}
+              onBackToMap={() => handleFinishNode()} 
+            />
+          </div>
+        )}
+
+        {state.view === 'Shop' && state.shopInventory && (
+          <div className="h-screen bg-bento-bg">
+            <ShopView 
+                logs={state.logs} 
+                gold={state.gold} 
+                inventory={state.shopInventory}
+                onBuyCard={handleBuyCard}
+                onBuyRelic={handleBuyRelic}
+                onBuyPotion={handleBuyPotion}
+                onRemoveCard={handleRemoveCard}
+                playerHasFullPotions={state.player ? state.player.potions.length >= state.player.maxPotions : false}
+                onBackToMap={() => handleFinishNode()} 
+                onHover={handleMouseEnter}
+                onLeave={handleMouseLeave}
+            />
+          </div>
+        )}
+
+        {state.view === 'Reward' && state.reward && (
+          <div className="h-screen bg-bento-bg">
+            <RewardView 
+               reward={state.reward} 
+               onCollectGold={handleCollectGold}
+               onCollectRelic={handleCollectRelic}
+               onChooseCard={handleChooseCard}
+               onSkip={handleSkipRewards}
+               hasCollectedGold={state.reward.gold === 0}
+               hasCollectedRelic={state.reward.relic === null}
+               onHover={handleMouseEnter}
+               onLeave={handleMouseLeave}
+            />
+          </div>
+        )}
+
+        <AnimatePresence>
+          {viewingPile && state.player && (
+            <PileOverlay 
+              title={viewingPile === 'deck' ? 'Meglévő Kártyák (Deck)' : viewingPile === 'draw' ? 'Akták (Draw Pile)' : 'Daráló (Discard Pile)'}
+              cards={viewingPile === 'deck' ? state.player.deck : viewingPile === 'draw' ? state.player.drawPile : state.player.discardPile}
+              onClose={() => setViewingPile(null)}
+            />
+          )}
+        </AnimatePresence>
+
+        {/* Global Tooltip Portal */}
+        <AnimatePresence>
+          {hoveredInfo && (
+            <motion.div
+              initial={{ opacity: 0, y: hoveredInfo.side === 'top' ? 10 : -10, scale: 0.9 }}
+              animate={{ opacity: 1, y: 0, scale: 1 }}
+              exit={{ opacity: 0, scale: 0.9 }}
+              style={{
+                position: 'fixed',
+                left: hoveredInfo.x,
+                top: hoveredInfo.side === 'top' ? hoveredInfo.targetTop - 12 : hoveredInfo.targetBottom + 12,
+                transform: `translateX(-50%) ${hoveredInfo.side === 'top' ? 'translateY(-100%)' : 'translateY(0%)'}`,
+                zIndex: 9999,
+                pointerEvents: 'none'
+              }}
+              className="w-64 bento-panel p-4 bg-black/90 backdrop-blur-xl border-white/20 shadow-[0_20px_50px_rgba(0,0,0,0.7)]"
+            >
+              <div className="font-bold text-bento-gold text-sm md:text-base mb-1 flex items-center gap-2">
+                <Zap size={14} className="text-bento-energy" /> {hoveredInfo.title}
+              </div>
+              <div className="text-xs text-white/80 leading-relaxed italic">{hoveredInfo.description}</div>
+              
+              {/* Arrow */}
+              <div 
+                className={`absolute w-3 h-3 bg-black/90 border-white/20 rotate-45 
+                  ${hoveredInfo.side === 'top' 
+                    ? '-bottom-1.5 border-r border-b' 
+                    : '-top-1.5 border-l border-t'}
+                `}
+                style={{
+                   left: `calc(50% + ${(hoveredInfo.anchorX - hoveredInfo.x)}px)`,
+                   transform: 'translateX(-50%) rotate(45deg)'
+                }}
+              />
+            </motion.div>
+          )}
+        </AnimatePresence>
+    </div>
+  );
+}
+
