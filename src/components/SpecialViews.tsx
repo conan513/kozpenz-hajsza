@@ -33,10 +33,10 @@ export const PileOverlay: React.FC<{
                 Üres...
             </div>
         ) : (
-            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-6 justify-items-center">
+            <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-8 justify-items-center p-4">
                 {cards.map((card, i) => (
-                    <div key={`${card.id}-${i}`} className="transform scale-90 md:scale-100">
-                        <CardComponent card={card} disabled />
+                    <div key={`${card.id}-${i}`} className="transform md:scale-110 mb-4 hover:z-50">
+                        <CardComponent card={card} />
                     </div>
                 ))}
             </div>

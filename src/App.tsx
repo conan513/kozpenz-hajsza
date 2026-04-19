@@ -121,6 +121,11 @@ export default function App() {
     }
   }, [state.turn, state.view]);
 
+  // Clear tooltips on view change to prevent stuck popups
+  useEffect(() => {
+    setHoveredInfo(null);
+  }, [state.view]);
+
   // Check for combat win/loss
   useEffect(() => {
     if (state.view === 'Combat' && state.enemies.length === 0 && state.player) {
@@ -173,16 +178,14 @@ export default function App() {
 
   const handleChooseCard = (card: Card) => {
     setState(prev => {
-        if (!prev.player) return prev;
+        if (!prev.player || !prev.reward) return prev;
         return {
             ...prev,
             player: { ...prev.player, deck: [...prev.player.deck, card] },
             logs: [`Added ${card.name} to deck.`, ...prev.logs],
-            view: 'Map',
-            reward: null
+            reward: { ...prev.reward, cards: [] }
         };
     });
-    handleFinishNode();
   };
 
   const handleSkipRewards = () => {
@@ -401,15 +404,16 @@ export default function App() {
   return (
     <div className="min-h-screen bg-[#050505] text-white font-sans selection:bg-yellow-500/30 overflow-x-hidden">
         {state.view === 'Title' && (
-          <div className="min-h-screen flex flex-col items-center justify-center p-8 bg-bento-bg">
+          <div className="min-h-screen flex flex-col items-center justify-center p-8 bg-bento-bg relative overflow-hidden">
+            <div className="absolute inset-0 paper-texture opacity-30" />
             <motion.h1 
               initial={{ y: -50 }}
               animate={{ y: 0 }}
-              className="text-6xl md:text-9xl font-black italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-white to-white/10 mb-4 text-center md:text-left"
+              className="text-6xl md:text-9xl font-black font-serif italic tracking-tighter text-transparent bg-clip-text bg-gradient-to-b from-bento-gold to-yellow-700 mb-4 text-center md:text-left drop-shadow-[0_5px_5px_rgba(0,0,0,0.8)]"
             >
               NER<br/>SCROLLER
             </motion.h1>
-            <p className="text-bento-text-dim tracking-[0.3em] uppercase text-xs md:text-sm mb-12 font-medium text-center">Egy Kártyázós Közéleti Kaland</p>
+            <p className="text-bento-gold/60 tracking-[0.3em] uppercase text-xs md:text-sm mb-12 font-bold text-center font-mono">Egy Kártyázós Közéleti Kaland</p>
             
             <motion.button
               whileHover={{ scale: 1.1, letterSpacing: '0.2em' }}
@@ -429,8 +433,9 @@ export default function App() {
         )}
 
         {state.view === 'Map' && state.player && (
-          <div className="min-h-screen w-full p-4 md:p-8 flex flex-col items-center bg-bento-bg overflow-y-auto overflow-x-hidden">
-            <header className="w-full max-w-4xl flex flex-col md:flex-row justify-between items-center mb-8 bento-panel py-4 px-4 md:px-8 gap-4">
+          <div className="min-h-screen w-full p-4 md:p-8 flex flex-col items-center bg-bento-bg overflow-y-auto overflow-x-hidden relative">
+            <div className="absolute inset-0 paper-texture opacity-20 pointer-events-none" />
+            <header className="w-full max-w-4xl flex flex-col md:flex-row justify-between items-center mb-8 bento-panel lux-shadow py-4 px-4 md:px-8 gap-4 rounded-sm border-t-4 border-t-bento-accent">
               <div className="flex items-center gap-4 md:gap-8 w-full md:w-auto justify-between md:justify-start">
                 <div className="flex flex-col">
                   <span className="text-[10px] uppercase tracking-wider text-bento-text-dim">Népszerűség</span>
@@ -457,7 +462,7 @@ export default function App() {
                   </div>
                 </div>
               </div>
-              <h2 className="text-lg md:text-xl font-black italic tracking-tighter text-white/20">{state.player.class.toUpperCase()} · I. CIKLUS</h2>
+              <h2 className="text-lg md:text-xl font-black font-serif italic tracking-tighter text-bento-gold/80">{state.player.class.toUpperCase()} · I. CIKLUS</h2>
             </header>
 
             <div className="w-full max-w-4xl">
@@ -468,9 +473,10 @@ export default function App() {
               />
             </div>
 
-            <div className="mt-8 w-full max-w-4xl bento-panel h-24 overflow-y-auto font-mono text-[10px] text-bento-text-dim transition-all hover:text-white">
+            <div className="mt-8 w-full max-w-4xl bento-panel lux-shadow h-24 overflow-y-auto font-mono text-[10px] text-bento-text-main/80 bg-black/40 border-l-4 border-l-bento-gold transition-all hover:text-white p-4 relative">
+                <div className="absolute inset-0 paper-texture opacity-40 pointer-events-none" />
                 {state.logs.map((log, i) => (
-                    <div key={i} className="mb-1">{`> ${log}`}</div>
+                    <div key={i} className="mb-1 relative z-10">{`> ${log}`}</div>
                 ))}
             </div>
           </div>
@@ -478,8 +484,9 @@ export default function App() {
 
         {state.view === 'Combat' && (
           state.player && state.enemies ? (
-            <div className="min-h-screen w-full flex flex-col p-2 md:p-5 bg-bento-bg overflow-x-hidden">
-              <div className="grid grid-cols-1 md:grid-cols-12 md:grid-rows-[60px_1fr_220px] gap-2 md:gap-3 h-full overflow-hidden">
+            <div className="h-screen w-full flex flex-col p-2 md:p-5 bg-bento-bg overflow-hidden relative">
+              <div className="absolute inset-0 paper-texture opacity-20 pointer-events-none" />
+              <div className="grid grid-cols-1 md:grid-cols-12 md:grid-rows-[60px_1fr_220px] gap-2 md:gap-3 flex-1 overflow-hidden z-10">
                 {/* Top Info Panels */}
                 <div className="bento-panel col-span-1 md:col-span-8 flex items-center gap-4 md:gap-6 p-4">
                   <div className="flex flex-col flex-shrink-0">
@@ -505,7 +512,7 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="bento-panel col-span-1 md:col-span-4 flex items-center justify-start md:justify-end gap-4 px-3 md:px-6 py-2">
+                <div className="bento-panel lux-shadow col-span-1 md:col-span-4 flex items-center justify-start md:justify-end gap-4 px-3 md:px-6 py-2 rounded-sm border-t-2 border-t-bento-gold">
                   <div className="flex flex-col items-start md:items-end">
                       <span className="text-[10px] uppercase tracking-wider text-bento-text-dim mb-1">Mutik</span>
                       <div className="flex gap-1.5 md:gap-2">
@@ -551,7 +558,8 @@ export default function App() {
                 </div>
 
                 {/* Middle Combat Panel */}
-                <div className="bento-panel col-span-1 md:col-span-12 relative flex flex-col md:flex-row items-center justify-around bg-gradient-to-b from-transparent to-black/40 py-8 md:py-0 min-h-[400px] md:min-h-0">
+                <div className="bento-panel lux-shadow col-span-1 md:col-span-12 relative flex flex-col md:flex-row items-center justify-around bg-gradient-to-b from-[#1a0f0f] to-[#0d0707] py-8 md:py-0 min-h-[400px] md:min-h-0 rounded-sm border-2 border-bento-border overflow-hidden">
+                  <div className="absolute inset-0 paper-texture opacity-30 pointer-events-none" />
                   {state.player && (
                     <div className="entity player flex flex-col items-center mb-8 md:mb-0">
                         <div className="w-32 h-32 md:w-40 md:h-40 bg-slate-700/0 mb-3 flex items-center justify-center p-2 relative group">
@@ -599,9 +607,10 @@ export default function App() {
                   </div>
 
                   {/* Logs Overlay inside combat panel */}
-                  <div className="hidden lg:block absolute top-4 right-4 w-64 max-h-32 overflow-y-auto bg-black/40 backdrop-blur-sm rounded-lg p-3 border border-white/10 text-[10px] font-mono opacity-60 hover:opacity-100 transition-opacity">
+                  <div className="hidden lg:block absolute top-4 right-4 w-64 max-h-32 overflow-y-auto bg-black/70 backdrop-blur-sm rounded-sm p-3 border border-bento-gold/30 text-[10px] font-mono opacity-80 hover:opacity-100 transition-opacity lux-shadow">
+                      <div className="absolute inset-0 paper-texture opacity-50 pointer-events-none" />
                       {(state.logs || []).slice(0, 4).map((log, i) => (
-                          <div key={i} className={`mb-1 ${i === 0 ? 'text-white' : 'text-white/40'}`}>{`> ${log}`}</div>
+                          <div key={i} className={`mb-1 relative z-10 ${i === 0 ? 'text-bento-gold' : 'text-bento-text-main/60'}`}>{`> ${log}`}</div>
                       ))}
                   </div>
                 </div>
@@ -615,72 +624,88 @@ export default function App() {
                   </div>
                 </div>
 
-                <div className="bento-panel col-span-1 md:col-span-8 flex items-center justify-start md:justify-center overflow-x-auto gap-3 py-6 px-12 md:px-20 relative group custom-scrollbar">
+                <div className="col-span-1 md:col-span-7 flex items-end justify-center relative z-20 pb-2 md:pb-6 overflow-visible">
                     <AnimatePresence mode="popLayout" initial={false}>
-                      {(state.player?.hand || []).map((card) => (
-                        <motion.div
-                          key={card.id}
-                          layout
-                          initial={{ y: 50, opacity: 0, scale: 0.8 }}
-                          animate={{ y: 0, opacity: 1, scale: 1 }}
-                          exit={{ y: -150, opacity: 0, scale: 1.1, transition: { duration: 0.3 } }}
-                          transition={{ 
-                            type: 'spring',
-                            stiffness: 400,
-                            damping: 35,
-                          }}
-                          className="flex-shrink-0 relative"
-                        >
-                          <CardComponent 
-                            card={card} 
-                            onClick={() => {
-                               const index = state.player?.hand.findIndex(c => c.id === card.id) ?? -1;
-                               if (index !== -1) playCard(card, index);
+                      {(state.player?.hand || []).map((card, i) => {
+                        const handSize = state.player?.hand.length || 1;
+                        const center = (handSize - 1) / 2;
+                        const offset = i - center;
+                        const rotation = offset * 5;
+                        const yOffset = Math.abs(offset) * Math.abs(offset) * 2;
+                        const marginX = handSize > 8 ? -40 : handSize > 5 ? -20 : -5;
+
+                        return (
+                          <motion.div
+                            key={card.id}
+                            layout
+                            initial={{ y: 150, opacity: 0, scale: 0.8 }}
+                            animate={{ y: yOffset, opacity: 1, scale: 1, rotate: rotation }}
+                            exit={{ y: -150, opacity: 0, scale: 1.1, transition: { duration: 0.3 } }}
+                            whileHover={{ rotate: 0, zIndex: 100, transition: { duration: 0.15 } }}
+                            style={{ 
+                              marginLeft: i === 0 ? 0 : marginX,
+                              transformOrigin: "bottom center",
+                              zIndex: 10 + i
                             }}
-                            disabled={(state.player?.energy ?? 0) < card.cost || state.turn !== 'Player'}
-                          />
-                          {targetingCard?.card.id === card.id && (
-                             <div className="absolute inset-0 bg-bento-accent/20 rounded-lg pointer-events-none border-2 border-bento-accent animate-pulse" />
-                          )}
-                        </motion.div>
-                      ))}
+                            transition={{ 
+                              type: 'spring',
+                              stiffness: 400,
+                              damping: 35,
+                            }}
+                            className="flex-shrink-0 relative"
+                          >
+                            <CardComponent 
+                              card={card} 
+                              onClick={() => {
+                                 const index = state.player?.hand.findIndex(c => c.id === card.id) ?? -1;
+                                 if (index !== -1) playCard(card, index);
+                              }}
+                              disabled={(state.player?.energy ?? 0) < card.cost || state.turn !== 'Player'}
+                            />
+                            {targetingCard?.card.id === card.id && (
+                               <div className="absolute inset-0 bg-bento-accent/20 rounded-lg pointer-events-none border-2 border-bento-accent animate-pulse" />
+                            )}
+                          </motion.div>
+                        );
+                      })}
                     </AnimatePresence>
-
-                    {/* End Turn Button */}
-                    <div className="md:absolute md:right-2 lg:right-6 z-20 flex-shrink-0">
-                      <motion.button
-                        whileHover={{ scale: 1.05, backgroundColor: '#ffffff' }}
-                        whileTap={{ scale: 0.95 }}
-                        onClick={handleEndTurn}
-                        disabled={state.turn !== 'Player'}
-                        className={`px-4 py-3 md:px-6 md:py-10 rounded-xl font-black tracking-widest uppercase transition-all shadow-xl border-2
-                          ${state.turn === 'Player' 
-                            ? 'bg-white text-black border-white hover:shadow-[0_0_30px_rgba(255,255,255,0.3)]' 
-                            : 'bg-white/5 text-white/20 border-white/5 cursor-not-allowed'}
-                          md:vertical-rl md:transform md:rotate-180 text-xs md:text-sm
-                        `}
-                      >
-                        {state.turn === 'Player' ? 'Kör Vége' : 'Központ...'}
-                      </motion.button>
-                    </div>
                 </div>
 
-                <div className="bento-panel col-span-1 md:col-span-2 flex flex-row md:flex-col gap-2 p-2 md:p-3 justify-center">
-                  <button 
-                    onClick={() => setViewingPile('draw')}
-                    className="flex-1 md:flex-none bg-slate-800/50 p-2 md:p-3 rounded text-center border border-white/5 hover:border-bento-gold/50 transition-colors group"
+                <div className="bento-panel lux-shadow col-span-1 md:col-span-3 flex flex-col gap-2 p-3 justify-between rounded-sm border-t-2 border-t-bento-gold">
+                  <div className="flex flex-row gap-2">
+                    <button 
+                      onClick={() => setViewingPile('draw')}
+                      className="flex-1 bg-black/50 p-2 rounded-sm text-center border border-white/5 hover:border-bento-gold/50 transition-colors group lux-shadow"
+                    >
+                      <div className="text-[10px] uppercase tracking-wider text-bento-text-dim mb-1 group-hover:text-bento-gold">Akták</div>
+                      <strong className="text-base md:text-xl font-mono text-bento-text-main">{(state.player?.drawPile || []).length}</strong>
+                    </button>
+                    <button 
+                      onClick={() => setViewingPile('discard')}
+                      className="flex-1 bg-black/50 p-2 rounded-sm text-center border border-white/5 hover:border-red-500/50 transition-colors group lux-shadow"
+                    >
+                      <div className="text-[10px] uppercase tracking-wider text-bento-text-dim mb-1 group-hover:text-red-400">Daráló</div>
+                      <strong className="text-base md:text-xl font-mono text-bento-text-main">{(state.player?.discardPile || []).length}</strong>
+                    </button>
+                  </div>
+                  
+                  {/* End Turn Button */}
+                  <motion.button
+                    whileHover={{ scale: 1.02, backgroundColor: '#d4af37', color: '#1a0f0f' }}
+                    whileTap={{ scale: 0.98 }}
+                    onClick={handleEndTurn}
+                    disabled={state.turn !== 'Player'}
+                    className={`w-full py-4 rounded-sm font-black font-serif tracking-widest uppercase transition-all shadow-xl border-2 flex-1 flex items-center justify-center
+                      ${state.turn === 'Player' 
+                        ? 'bg-bento-panel text-bento-gold border-bento-gold hover:shadow-[0_0_20px_rgba(212,175,55,0.4)]' 
+                        : 'bg-black/50 text-white/20 border-white/10 cursor-not-allowed'}
+                      text-sm md:text-base
+                    `}
                   >
-                    <div className="text-[10px] uppercase tracking-wider text-bento-text-dim mb-1 group-hover:text-bento-gold">Akták</div>
-                    <strong className="text-base md:text-xl font-mono">{(state.player?.drawPile || []).length}</strong>
-                  </button>
-                  <button 
-                    onClick={() => setViewingPile('discard')}
-                    className="flex-1 md:flex-none bg-slate-800/50 p-2 md:p-3 rounded text-center border border-white/5 hover:border-red-500/50 transition-colors group"
-                  >
-                    <div className="text-[10px] uppercase tracking-wider text-bento-text-dim mb-1 group-hover:text-red-400">Daráló</div>
-                    <strong className="text-base md:text-xl font-mono">{(state.player?.discardPile || []).length}</strong>
-                  </button>
+                    {state.turn === 'Player' ? 'Kör Vége' : 'Központ...'}
+                  </motion.button>
                 </div>
+
               </div>
             </div>
           ) : (
@@ -793,12 +818,13 @@ export default function App() {
                 zIndex: 9999,
                 pointerEvents: 'none'
               }}
-              className="w-64 bento-panel p-4 bg-black/90 backdrop-blur-xl border-white/20 shadow-[0_20px_50px_rgba(0,0,0,0.7)]"
+              className="w-64 bento-panel lux-shadow p-4 bg-black/95 backdrop-blur-xl border-bento-gold/50 rounded-sm relative overflow-hidden"
             >
-              <div className="font-bold text-bento-gold text-sm md:text-base mb-1 flex items-center gap-2">
+              <div className="absolute inset-0 paper-texture opacity-30 pointer-events-none" />
+              <div className="relative z-10 font-bold font-serif text-bento-gold text-sm md:text-base mb-1 flex items-center gap-2 border-b border-bento-gold/20 pb-1">
                 <Zap size={14} className="text-bento-energy" /> {hoveredInfo.title}
               </div>
-              <div className="text-xs text-white/80 leading-relaxed italic">{hoveredInfo.description}</div>
+              <div className="relative z-10 text-bento-text-main font-mono text-[10px] md:text-xs leading-relaxed mt-2">{hoveredInfo.description}</div>
               
               {/* Arrow */}
               <div 

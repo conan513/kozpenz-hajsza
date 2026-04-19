@@ -390,6 +390,8 @@ export const getStartingDeck = (cls: CharacterClass): Card[] => {
 };
 
 export const getRewardPool = (cls: CharacterClass): Card[] => {
-  // Give all generic/unique cards as rewards
-  return UNIQUE_CARDS.map(card => ({ ...card, id: `${card.id}-${Math.random()}` }));
+  // Give all generic/unique cards as rewards, except Hex cards
+  return UNIQUE_CARDS
+    .filter(card => card.type !== 'Hex')
+    .map(card => ({ ...card, id: `${card.id}-${Math.random()}` }));
 };

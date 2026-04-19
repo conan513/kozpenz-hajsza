@@ -38,7 +38,10 @@ const RewardView: React.FC<RewardViewProps> = ({
             <CardComponent 
               key={card.id} 
               card={card} 
-              onClick={() => onChooseCard(card)} 
+              onClick={() => {
+                onChooseCard(card);
+                setShowCardSelect(false);
+              }} 
             />
           ))}
         </div>
@@ -99,9 +102,10 @@ const RewardView: React.FC<RewardViewProps> = ({
 
           {/* Card Choice */}
           <motion.button
-            whileHover={{ x: 5 }}
+            whileHover={reward.cards.length > 0 ? { x: 5 } : {}}
             onClick={() => setShowCardSelect(true)}
-            className="flex items-center justify-between p-4 bento-panel hover:border-blue-400 transition-all"
+            disabled={reward.cards.length === 0}
+            className={`flex items-center justify-between p-4 bento-panel transition-all ${reward.cards.length === 0 ? 'opacity-30 cursor-not-allowed' : 'hover:border-blue-400'}`}
           >
             <div className="flex items-center gap-4">
               <div className="w-10 h-10 rounded-full bg-slate-800 flex items-center justify-center">

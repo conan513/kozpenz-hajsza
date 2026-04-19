@@ -16,7 +16,7 @@ export interface Card {
   needsTarget?: boolean;
 }
 
-export type EnemyIntentType = 'Attack' | 'Defend' | 'Buff' | 'Debuff';
+export type EnemyIntentType = 'Attack' | 'Defend' | 'Buff' | 'Debuff' | 'Curse';
 
 export interface EnemyIntent {
   type: EnemyIntentType;

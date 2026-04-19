@@ -1,15 +1,19 @@
 @import "tailwindcss";
 
 @theme {
-  --color-bento-bg: #0a0a0c;
-  --color-bento-panel: #16171d;
-  --color-bento-border: #32343d;
-  --color-bento-accent: #e53e3e;
-  --color-bento-gold: #f6ad55;
-  --color-bento-energy: #4fd1c5;
-  --color-bento-block: #4299e1;
-  --color-bento-text-main: #e2e8f0;
-  --color-bento-text-dim: #718096;
+  --font-sans: "Inter", sans-serif;
+  --font-serif: "Playfair Display", serif;
+  --font-mono: "Courier Prime", monospace;
+
+  --color-bento-bg: #1a0f0f;
+  --color-bento-panel: #2b1717;
+  --color-bento-border: #522d2d;
+  --color-bento-accent: #b91c1c;
+  --color-bento-gold: #d4af37;
+  --color-bento-energy: #0d9488;
+  --color-bento-block: #3b82f6;
+  --color-bento-text-main: #fdfbf7;
+  --color-bento-text-dim: #a39b9b;
 }
 
 @layer base {
@@ -18,6 +22,20 @@
     margin: 0;
     padding: 0;
   }
+  
+  html {
+    font-size: 14px;
+  }
+  @media (min-width: 768px) {
+    html { font-size: 16px; }
+  }
+  @media (min-width: 1536px) {
+    html { font-size: 20px; }
+  }
+  @media (min-width: 2560px) {
+    html { font-size: 28px; }
+  }
+
   body {
     background-color: var(--color-bento-bg);
     color: var(--color-bento-text-main);
@@ -46,4 +64,14 @@
 }
 .custom-scrollbar::-webkit-scrollbar-thumb:hover {
   background: var(--color-bento-text-dim); 
+}
+
+.paper-texture {
+  background-image: url("data:image/svg+xml,%3Csvg width='100' height='100' viewBox='0 0 100 100' xmlns='http://www.w3.org/2000/svg'%3E%3Cfilter id='noise'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='4' stitchTiles='stitch'/%3E%3C/filter%3E%3Crect width='100' height='100' filter='url(%23noise)' opacity='0.08'/%3E%3C/svg%3E");
+  mix-blend-mode: multiply;
+  pointer-events: none;
+}
+
+.lux-shadow {
+  box-shadow: 0 10px 30px -10px rgba(0, 0, 0, 0.8), inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }

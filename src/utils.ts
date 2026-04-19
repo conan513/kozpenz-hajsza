@@ -1,6 +1,6 @@
 import { GameState, Card, Enemy, EnemyIntentType, MapNode, Player, Relic, ShopInventory, Potion } from './types';
 import { ENEMIES } from './constants';
-import { getRewardPool } from './lib/cardLibrary';
+import { getRewardPool, UNIQUE_CARDS } from './lib/cardLibrary';
 import { RELICS } from './lib/relicLibrary';
 import { POTIONS } from './lib/potionLibrary';
 
@@ -168,7 +168,7 @@ export const startCombat = (state: GameState, enemyTemplate: typeof ENEMIES[0], 
       id: `enemy-${Date.now()}-${i}-${Math.random().toString(36).substr(2, 4)}`,
       hp: template.maxHp,
       block: 0,
-      intent: generateEnemyIntent(),
+      intent: generateEnemyIntent(isEliteOrBoss),
       statusEffects: [],
       name: enemyCount > 1 ? `${template.name} ${String.fromCharCode(65 + i)}` : template.name
     });
@@ -188,8 +188,9 @@ export const startCombat = (state: GameState, enemyTemplate: typeof ENEMIES[0], 
   return triggerRelics(initialState, 'onCombatStart');
 };
 
-export const generateEnemyIntent = (): { type: EnemyIntentType; value: number } => {
+export const generateEnemyIntent = (isEliteOrBoss: boolean = false): { type: EnemyIntentType; value: number } => {
   const types: EnemyIntentType[] = ['Attack', 'Defend', 'Buff', 'Debuff'];
+  if (isEliteOrBoss) types.push('Curse', 'Curse'); // Növelt esély az átkokra
   const type = types[Math.floor(Math.random() * types.length)];
   let value = 5;
   if (type === 'Attack') value = 6 + Math.floor(Math.random() * 6);
@@ -203,6 +204,7 @@ export const resolveEnemyTurn = (state: GameState): GameState => {
   let playerHp = state.player.hp;
   let playerBlock = state.player.block;
   let currentPlayerStatus = [...state.player.statusEffects];
+  let playerDiscardPile = [...state.player.discardPile];
   let logs = [...state.logs];
   let newEnemies = [...state.enemies];
 
@@ -252,6 +254,12 @@ export const resolveEnemyTurn = (state: GameState): GameState => {
       currentPlayerStatus = existing
         ? currentPlayerStatus.map(s => s.type === 'Poison' ? { ...s, stacks: s.stacks + (enemy.intent.value || 0) } : s)
         : [...currentPlayerStatus, { type: 'Poison' as const, stacks: (enemy.intent.value || 0) }];
+    } else if (enemy.intent.type === 'Curse') {
+      logs = [`${enemy.name} egy kompromittáló aktát csúsztatott a zsebedbe! (Bürokrácia a dobópakliba)`, ...logs];
+      const hexCard = UNIQUE_CARDS.find(c => c.id === 'hx-bureaucracy');
+      if (hexCard) {
+         playerDiscardPile.push({ ...hexCard, id: `${hexCard.id}-${Math.random()}` });
+      }
     }
     
     const nextEnemyStatus = newEnemies[i].statusEffects
@@ -261,7 +269,7 @@ export const resolveEnemyTurn = (state: GameState): GameState => {
     newEnemies[i] = {
       ...newEnemies[i],
       block: enemyBlock,
-      intent: generateEnemyIntent(),
+      intent: generateEnemyIntent(state.currentNodeId?.includes('Elite') || state.currentNodeId?.includes('Boss')),
       statusEffects: nextEnemyStatus
     };
   }
@@ -288,7 +296,7 @@ export const resolveEnemyTurn = (state: GameState): GameState => {
     energy: state.player.maxEnergy,
     hand: [], // Hand cleared
     drawPile: [...state.player.drawPile],
-    discardPile: [...state.player.discardPile, ...state.player.hand],
+    discardPile: [...playerDiscardPile, ...state.player.hand],
     statusEffects: nextPlayerStatus
   };
   
