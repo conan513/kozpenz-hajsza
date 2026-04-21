@@ -17,7 +17,7 @@ interface RewardViewProps {
   onLeave: () => void;
 }
 
-const RewardView: React.FC<RewardViewProps> = ({ 
+const RewardView: React.FC<RewardViewProps> = React.memo(({ 
   reward, 
   onCollectGold, 
   onCollectRelic, 
@@ -129,6 +129,6 @@ const RewardView: React.FC<RewardViewProps> = ({
       </div>
     </div>
   );
-};
+});
 
 export default RewardView;

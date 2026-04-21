@@ -65,7 +65,7 @@ const EFFECT_DATA: Record<StatusEffect['type'], { name: string, description: str
   }
 };
 
-export const StatusEffectBadge: React.FC<StatusEffectProps> = ({ effect, onHover, onLeave }) => {
+export const StatusEffectBadge: React.FC<StatusEffectProps> = React.memo(({ effect, onHover, onLeave }) => {
   const data = EFFECT_DATA[effect.type];
   
   return (
@@ -78,14 +78,14 @@ export const StatusEffectBadge: React.FC<StatusEffectProps> = ({ effect, onHover
       <span className="text-[10px] font-bold text-white">{effect.stacks}</span>
     </div>
   );
-};
+});
 
 export const StatusEffectList: React.FC<{
   effects: StatusEffect[];
   onHover: (e: React.MouseEvent, title: string, description: string) => void;
   onLeave: () => void;
   className?: string;
-}> = ({ effects, onHover, onLeave, className = "" }) => {
+}> = React.memo(({ effects, onHover, onLeave, className = "" }) => {
   if (!effects || effects.length === 0) return null;
 
   return (
@@ -100,4 +100,4 @@ export const StatusEffectList: React.FC<{
       ))}
     </div>
   );
-};
+});

@@ -9,7 +9,7 @@ export const PileOverlay: React.FC<{
   cards: Card[], 
   gameState: GameState,
   onClose: () => void 
-}> = ({ title, cards, gameState, onClose }) => (
+}> = React.memo(({ title, cards, gameState, onClose }) => (
   <motion.div 
     initial={{ opacity: 0 }}
     animate={{ opacity: 1 }}
@@ -44,7 +44,7 @@ export const PileOverlay: React.FC<{
         )}
     </div>
   </motion.div>
-);
+));
 
 interface SpecialViewProps {
   onBackToMap: () => void;
@@ -55,7 +55,7 @@ export const StartView: React.FC<SpecialViewProps & {
   event: GameEvent; 
   choices: EventChoice[]; 
   onChoose: (index: number) => void 
-}> = ({ event, choices, onChoose }) => (
+}> = React.memo(({ event, choices, onChoose }) => (
   <div className="min-h-screen flex flex-col items-center justify-center p-4 md:p-8">
     <div className="bento-panel max-w-3xl w-full flex flex-col items-center gap-6 md:gap-8 text-center bg-[radial-gradient(circle_at_center,_#2d3748_0%,_#16171d_100%)] p-6 md:p-12 border-bento-gold">
       <div className="w-20 h-20 md:w-24 md:h-24 bg-bento-panel border-4 border-bento-gold rounded-full flex items-center justify-center shadow-[0_0_40px_rgba(246,173,85,0.4)]">
@@ -89,9 +89,9 @@ export const StartView: React.FC<SpecialViewProps & {
       </div>
     </div>
   </div>
-);
+));
 
-export const RestView: React.FC<SpecialViewProps & { onRest: () => void }> = ({ onRest, onBackToMap }) => (
+export const RestView: React.FC<SpecialViewProps & { onRest: () => void }> = React.memo(({ onRest, onBackToMap }) => (
   <div className="min-h-screen flex flex-col items-center justify-center p-4 md:p-8">
     <div className="bento-panel max-w-2xl w-full flex flex-col items-center gap-6 md:gap-8 text-center bg-[radial-gradient(circle_at_center,_#2d3748_0%,_#16171d_100%)] p-6 md:p-12">
       <div className="w-20 h-20 md:w-24 md:h-24 bg-bento-panel border-4 border-bento-border rounded-full flex items-center justify-center shadow-2xl">
@@ -128,13 +128,13 @@ export const RestView: React.FC<SpecialViewProps & { onRest: () => void }> = ({ 
       </div>
     </div>
   </div>
-);
+));
 
 export const EventView: React.FC<SpecialViewProps & { 
   event: GameEvent; 
   choices: EventChoice[]; 
   onChoose: (index: number) => void 
-}> = ({ event, choices, onChoose }) => (
+}> = React.memo(({ event, choices, onChoose }) => (
   <div className="min-h-screen flex flex-col items-center justify-center p-4 md:p-8">
     <div className="bento-panel max-w-3xl w-full grid grid-cols-1 md:grid-cols-2 gap-6 md:gap-8 items-center bg-slate-900/50 p-6 md:p-8 border-white/5">
       <div className="h-48 md:h-96 bg-slate-800 rounded-lg flex items-center justify-center border border-white/5 overflow-hidden relative">
@@ -170,7 +170,7 @@ export const EventView: React.FC<SpecialViewProps & {
       </div>
     </div>
   </div>
-);
+));
 
 interface ShopViewProps extends SpecialViewProps {
   gold: number;
@@ -185,7 +185,7 @@ interface ShopViewProps extends SpecialViewProps {
   onLeave: () => void;
 }
 
-export const ShopView: React.FC<ShopViewProps> = ({ 
+export const ShopView: React.FC<ShopViewProps> = React.memo(({ 
   gold, 
   inventory, 
   onBuyCard, 
@@ -360,6 +360,4 @@ export const ShopView: React.FC<ShopViewProps> = ({
     </div>
   </div>
   );
-};
-
-
+});
