@@ -1,4 +1,5 @@
 import { Potion, GameState } from '../types';
+import { drawCards } from './cardUtils';
 
 export const POTIONS: Potion[] = [
   {
@@ -55,22 +56,9 @@ export const POTIONS: Potion[] = [
     rarity: 'Common',
     effect: (state: GameState) => {
       if (!state.player) return state;
-      // Note: we'll implement a clean draw helper or just inline simple draw
-      // Inlining simplified draw for potion since full draw helper is in cardLibrary
-      let newDraw = [...state.player.drawPile];
-      let newDiscard = [...state.player.discardPile];
-      let newHand = [...state.player.hand];
-      for (let i = 0; i < 3; i++) {
-        if (newDraw.length === 0 && newDiscard.length > 0) {
-           newDraw = [...newDiscard].sort(() => Math.random() - 0.5);
-           newDiscard = [];
-        }
-        const c = newDraw.pop();
-        if (c) newHand.push(c);
-      }
+      const s2 = drawCards(state, 3);
       return {
-        ...state,
-        player: { ...state.player, drawPile: newDraw, discardPile: newDiscard, hand: newHand },
+        ...s2,
         logs: [`Kibontottad a Kiszivárgott Aktát. Húztál 3 lapot.`, ...state.logs]
       };
     }

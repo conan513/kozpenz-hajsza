@@ -17,13 +17,14 @@ import CharacterSelectView from './components/CharacterSelectView';
 import RewardView from './components/RewardView';
 import { StatusEffectList } from './components/StatusEffects';
 import { EVENTS, START_EVENTS } from './constants';
-import { getStartingDeck, getRewardPool } from './lib/cardLibrary';
+import { getStartingDeck, getRewardPool, getWeightedRewardCards } from './lib/cardLibrary';
 import { RELICS } from './lib/relicLibrary';
 import { SpriteRenderer } from './components/SpriteRenderer';
 
 export default function App() {
   const [state, setState] = useState<GameState>(createInitialState());
-  const [viewingPile, setViewingPile] = useState<'deck' | 'draw' | 'discard' | null>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+  const [viewingPile, setViewingPile] = useState<'deck' | 'draw' | 'discard' | 'exhaust' | null>(null);
   const [hoveredInfo, setHoveredInfo] = useState<{
     title: string;
     description: string;
@@ -65,6 +66,8 @@ export default function App() {
   };
 
   const handleSelectCharacter = (char: CharacterDefinition) => {
+    if (isProcessing) return;
+    setIsProcessing(true);
     const classCards = getStartingDeck(char.class);
     setState(prev => ({
       ...prev,
@@ -84,11 +87,14 @@ export default function App() {
         statusEffects: [],
         relics: [char.relic],
         potions: [],
-        maxPotions: 3
+        maxPotions: 3,
+        allies: [],
+        maxAllies: 3
       },
       gold: char.gold,
       logs: [`Started run with ${char.class}.`, `Gained relic: ${char.relic.name}.`, ...prev.logs]
     }));
+    setTimeout(() => setIsProcessing(false), 300);
   };
 
   const handleUsePotion = (index: number) => {
@@ -96,21 +102,46 @@ export default function App() {
         if (!prev.player || prev.turn !== 'Player') return prev;
         const potion = prev.player.potions[index];
         if (!potion) return prev;
-
         let newState = potion.effect(prev);
         const newPotions = [...newState.player!.potions];
         newPotions.splice(index, 1);
-        
         return {
             ...newState,
-            player: { ...newState.player!, potions: newPotions }
+            player: {
+                ...newState.player!,
+                potions: newPotions
+            }
         };
     });
   };
 
+  useEffect(() => {
+    if (state.pendingHex && state.player) {
+      const timer = setTimeout(() => {
+        setState(prev => {
+          if (!prev.pendingHex || !prev.player) return prev;
+          return {
+            ...prev,
+            player: {
+              ...prev.player,
+              discardPile: [...prev.player.discardPile, prev.pendingHex]
+            },
+            pendingHex: null,
+            logs: [`Az ártó kártya bekerült a Darálóba.`, ...prev.logs]
+          };
+        });
+      }, 2000);
+      return () => clearTimeout(timer);
+    }
+  }, [state.pendingHex, state.player]);
+
+
   const handleEndTurn = useCallback(() => {
+    if (isProcessing) return;
+    setIsProcessing(true);
     setState(prev => ({ ...prev, turn: 'Enemy' }));
-  }, []);
+    setTimeout(() => setIsProcessing(false), 500);
+  }, [isProcessing]);
 
   useEffect(() => {
     if (state.turn === 'Enemy' && state.view === 'Combat') {
@@ -132,7 +163,7 @@ export default function App() {
       // Trigger end of combat relics (like Burning Blood)
       let finalState = triggerRelics(state, 'onCombatEnd');
       
-      const rewardCards = shuffle(getRewardPool(state.player.class)).slice(0, 3);
+      const rewardCards = getWeightedRewardCards(state.player.class, 3);
       const isEliteOrBoss = state.currentNodeId?.includes('Elite') || state.currentNodeId?.includes('Boss') || Math.random() < 0.2;
       const randomRelic = isEliteOrBoss ? RELICS[Math.floor(Math.random() * RELICS.length)] : null;
 
@@ -153,6 +184,7 @@ export default function App() {
   }, [state.enemies.length, state.player?.hp, state.view, state.currentNodeId]);
 
   const handleCollectGold = () => {
+    handleMouseLeave();
     setState(prev => {
         if (!prev.reward) return prev;
         return {
@@ -165,6 +197,7 @@ export default function App() {
   };
 
   const handleCollectRelic = (relic: any) => {
+    handleMouseLeave();
     setState(prev => {
         if (!prev.player || !prev.reward) return prev;
         return {
@@ -177,6 +210,7 @@ export default function App() {
   };
 
   const handleChooseCard = (card: Card) => {
+    handleMouseLeave();
     setState(prev => {
         if (!prev.player || !prev.reward) return prev;
         return {
@@ -200,47 +234,59 @@ export default function App() {
   const [targetingCard, setTargetingCard] = useState<{card: Card, index: number} | null>(null);
 
   const playCard = (card: Card, index: number, targetId?: string) => {
-    if (!state.player || state.player.energy < card.cost || state.turn !== 'Player' || card.type === 'Hex') return;
+    if (isProcessing || !state.player || state.player.energy < card.cost || state.turn !== 'Player' || card.type === 'Hex') return;
 
     if (card.needsTarget && !targetId && state.enemies.length > 1) {
         setTargetingCard({ card, index });
-        return; // Wait for target selection
+        return;
     } else if (card.needsTarget && !targetId && state.enemies.length === 1) {
-        targetId = state.enemies[0].id; // Auto target if only 1 enemy
+        targetId = state.enemies[0].id;
     }
 
+    setIsProcessing(true);
     setTargetingCard(null);
 
     setState(prev => {
       if (!prev.player) return prev;
-      let newState = card.effect(prev, targetId);
-      const newHand = [...newState.player!.hand];
-      newHand.splice(index, 1);
       
+      const cardIndex = prev.player.hand.findIndex(c => c.id === card.id);
+      if (cardIndex === -1) return prev;
+
+      // Effect execution
+      let newState = card.effect(prev, targetId);
+      if (!newState.player) return newState;
+
+      // Remove the played card from hand (only one instance)
+      const newHand = [...newState.player.hand];
+      const actualIndex = newHand.findIndex(c => c.id === card.id);
+      if (actualIndex !== -1) newHand.splice(actualIndex, 1);
+
       const isPower = card.type === 'Power';
       
-      newState = {
+      const finalState = {
         ...newState,
         player: {
-          ...newState.player!,
-          energy: newState.player!.energy - card.cost,
+          ...newState.player,
+          energy: newState.player.energy - card.cost,
           hand: newHand,
-          discardPile: isPower ? newState.player!.discardPile : [...newState.player!.discardPile, card]
+          discardPile: (isPower || card.exhaust) ? newState.player.discardPile : [...newState.player.discardPile, card],
+          exhaustPile: card.exhaust ? [...newState.player.exhaustPile, card] : newState.player.exhaustPile
         },
-        cardsPlayedThisTurn: [...newState.cardsPlayedThisTurn, card.id]
+        cardsPlayedThisTurn: [...newState.cardsPlayedThisTurn, card.id],
+        enemies: newState.enemies.filter(e => e.hp > 0)
       };
       
-      // Remove permanently dead enemies right after card resolves
-      newState.enemies = newState.enemies.filter(e => e.hp > 0);
-
-      // Trigger card play relics
-      newState = triggerRelics(newState, 'onCardPlay', card);
-      
-      return newState;
+      return triggerRelics(finalState, 'onCardPlay', card);
     });
+
+    setTimeout(() => setIsProcessing(false), 200);
   };
 
+
+
   const handleNodeClick = (node: MapNode) => {
+    if (isProcessing) return;
+    setIsProcessing(true);
     if (node.type === 'Combat' || node.type === 'Elite' || node.type === 'Boss') {
       const enemyPool = node.type === 'Boss' ? BOSS_ENEMIES : node.type === 'Elite' ? ELITE_ENEMIES : ENEMIES;
       const randomEnemy = enemyPool[Math.floor(Math.random() * (enemyPool.length || 1))] || ENEMIES[0];
@@ -276,9 +322,12 @@ export default function App() {
             };
         });
     }
+    setTimeout(() => setIsProcessing(false), 500);
   };
 
   const handleEventChoice = (choiceIndex: number) => {
+    if (isProcessing) return;
+    setIsProcessing(true);
     setState(prev => {
       if (!prev.currentEvent || !prev.activeEventChoices[choiceIndex]) return prev;
       const choice = prev.activeEventChoices[choiceIndex];
@@ -297,6 +346,7 @@ export default function App() {
         })
       };
     });
+    setTimeout(() => setIsProcessing(false), 500);
   };
 
   const handleFinishNode = (logMessage?: string, additionalStateUpdates?: Partial<GameState>) => {
@@ -318,6 +368,9 @@ export default function App() {
   };
 
   const handleBuyCard = (card: Card, price: number) => {
+    if (isProcessing) return;
+    handleMouseLeave();
+    setIsProcessing(true);
     setState(prev => {
       if (!prev.player || !prev.shopInventory || prev.gold < price) return prev;
       return {
@@ -331,9 +384,13 @@ export default function App() {
         logs: [`Megvásároltad: ${card.name} (${price} Közpénz)`, ...prev.logs]
       };
     });
+    setTimeout(() => setIsProcessing(false), 300);
   };
 
   const handleBuyRelic = (relic: Relic, price: number) => {
+    if (isProcessing) return;
+    handleMouseLeave();
+    setIsProcessing(true);
     setState(prev => {
       if (!prev.player || !prev.shopInventory || prev.gold < price) return prev;
       return {
@@ -347,9 +404,13 @@ export default function App() {
         logs: [`Megvásároltad: ${relic.name} (${price} Közpénz)`, ...prev.logs]
       };
     });
+    setTimeout(() => setIsProcessing(false), 300);
   };
 
   const handleBuyPotion = (potion: Potion, price: number) => {
+    if (isProcessing) return;
+    handleMouseLeave();
+    setIsProcessing(true);
     setState(prev => {
       if (!prev.player || !prev.shopInventory || prev.gold < price || prev.player.potions.length >= prev.player.maxPotions) return prev;
       return {
@@ -363,11 +424,12 @@ export default function App() {
         logs: [`Megvásároltad: ${potion.name} (${price} Közpénz)`, ...prev.logs]
       };
     });
+    setTimeout(() => setIsProcessing(false), 300);
   };
 
   const handleRemoveCard = (price: number) => {
-    // In a full implementation, this would open a card selector view. 
-    // For now, we will pick a random non-strike/defend card if possible, else random card.
+    if (isProcessing) return;
+    setIsProcessing(true);
     setState(prev => {
         if (!prev.player || prev.gold < price || prev.player.deck.length === 0) return prev;
         
@@ -385,9 +447,12 @@ export default function App() {
           logs: [`Eltüntettél egy kártyát a Cégtemetőben: ${removedCard.name} (${price} Közpénz)`, ...prev.logs]
         };
     });
+    setTimeout(() => setIsProcessing(false), 300);
   };
 
   const handleRest = () => {
+    if (isProcessing) return;
+    setIsProcessing(true);
     setState(prev => {
       if (!prev.player) return prev;
       return {
@@ -399,6 +464,7 @@ export default function App() {
       };
     });
     handleFinishNode('Rested at campfire. (+30% HP)');
+    setTimeout(() => setIsProcessing(false), 500);
   };
 
   return (
@@ -452,6 +518,17 @@ export default function App() {
                   <div className="flex items-center gap-2">
                     <Layers size={14} className="text-blue-400" />
                     <span className="text-sm md:text-xl font-mono font-bold">{state.player.deck.length}</span>
+                  </div>
+                </button>
+                <div className="h-8 w-px bg-white/10 hidden md:block" />
+                <button 
+                  onClick={() => setViewingPile('exhaust')}
+                  className="flex flex-col hover:bg-white/5 p-1 rounded transition-colors text-left"
+                >
+                  <span className="text-[10px] uppercase tracking-wider text-bento-text-dim">Kimerült</span>
+                  <div className="flex items-center gap-2 text-purple-400">
+                    <Trash2 size={14} />
+                    <span className="text-sm md:text-xl font-mono font-bold">{state.player.exhaustPile?.length || 0}</span>
                   </div>
                 </button>
                 <div className="flex flex-col">
@@ -582,6 +659,20 @@ export default function App() {
                             )}
                         </div>
                         <span className="text-[10px] uppercase tracking-widest text-bento-text-dim mt-1">A {state.player.class}</span>
+                        {(state.player.allies && state.player.allies.length > 0) && (
+                           <div className="flex gap-2 mt-4">
+                             {state.player.allies.map((ally, i) => (
+                               <div 
+                                 key={`${ally.id}-${i}`}
+                                 className="w-10 h-10 rounded-full bg-slate-800 border-2 border-bento-gold/50 flex flex-col items-center justify-center relative group cursor-help hover:border-bento-gold hover:bg-slate-700 transition-all shadow-[0_0_10px_rgba(212,175,55,0.2)]"
+                                 onMouseEnter={(e) => handleMouseEnter(e, ally.name, ally.description)}
+                                 onMouseLeave={handleMouseLeave}
+                               >
+                                  <span className="text-[8px] font-bold mt-1">SZÖV.</span>
+                               </div>
+                             ))}
+                           </div>
+                        )}
                     </div>
                   )}
 
@@ -632,7 +723,7 @@ export default function App() {
                         const offset = i - center;
                         const rotation = offset * 5;
                         const yOffset = Math.abs(offset) * Math.abs(offset) * 2;
-                        const marginX = handSize > 8 ? -40 : handSize > 5 ? -20 : -5;
+                        const marginX = handSize <= 1 ? 0 : handSize <= 4 ? -10 : Math.max(-95, -20 - (handSize - 4) * 12);
 
                         return (
                           <motion.div
@@ -656,11 +747,12 @@ export default function App() {
                           >
                             <CardComponent 
                               card={card} 
+                              gameState={state}
                               onClick={() => {
                                  const index = state.player?.hand.findIndex(c => c.id === card.id) ?? -1;
                                  if (index !== -1) playCard(card, index);
                               }}
-                              disabled={(state.player?.energy ?? 0) < card.cost || state.turn !== 'Player'}
+                              disabled={(state.player?.energy ?? 0) < card.cost || state.turn !== 'Player' || isProcessing}
                             />
                             {targetingCard?.card.id === card.id && (
                                <div className="absolute inset-0 bg-bento-accent/20 rounded-lg pointer-events-none border-2 border-bento-accent animate-pulse" />
@@ -687,6 +779,13 @@ export default function App() {
                       <div className="text-[10px] uppercase tracking-wider text-bento-text-dim mb-1 group-hover:text-red-400">Daráló</div>
                       <strong className="text-base md:text-xl font-mono text-bento-text-main">{(state.player?.discardPile || []).length}</strong>
                     </button>
+                    <button 
+                      onClick={() => setViewingPile('exhaust')}
+                      className="flex-1 bg-black/50 p-2 rounded-sm text-center border border-white/5 hover:border-purple-500/50 transition-colors group lux-shadow"
+                    >
+                      <div className="text-[10px] uppercase tracking-wider text-bento-text-dim mb-1 group-hover:text-purple-400">Kimerült</div>
+                      <strong className="text-base md:text-xl font-mono text-bento-text-main">{(state.player?.exhaustPile || []).length}</strong>
+                    </button>
                   </div>
                   
                   {/* End Turn Button */}
@@ -694,9 +793,9 @@ export default function App() {
                     whileHover={{ scale: 1.02, backgroundColor: '#d4af37', color: '#1a0f0f' }}
                     whileTap={{ scale: 0.98 }}
                     onClick={handleEndTurn}
-                    disabled={state.turn !== 'Player'}
+                    disabled={state.turn !== 'Player' || isProcessing}
                     className={`w-full py-4 rounded-sm font-black font-serif tracking-widest uppercase transition-all shadow-xl border-2 flex-1 flex items-center justify-center
-                      ${state.turn === 'Player' 
+                      ${state.turn === 'Player' && !isProcessing
                         ? 'bg-bento-panel text-bento-gold border-bento-gold hover:shadow-[0_0_20px_rgba(212,175,55,0.4)]' 
                         : 'bg-black/50 text-white/20 border-white/10 cursor-not-allowed'}
                       text-sm md:text-base
@@ -765,6 +864,7 @@ export default function App() {
                 logs={state.logs} 
                 gold={state.gold} 
                 inventory={state.shopInventory}
+                gameState={state}
                 onBuyCard={handleBuyCard}
                 onBuyRelic={handleBuyRelic}
                 onBuyPotion={handleBuyPotion}
@@ -781,6 +881,7 @@ export default function App() {
           <div className="h-screen bg-bento-bg">
             <RewardView 
                reward={state.reward} 
+               gameState={state}
                onCollectGold={handleCollectGold}
                onCollectRelic={handleCollectRelic}
                onChooseCard={handleChooseCard}
@@ -794,10 +895,35 @@ export default function App() {
         )}
 
         <AnimatePresence>
+          {state.pendingHex && (
+            <motion.div
+              initial={{ opacity: 0, scale: 0, x: '-50%', y: '-50%' }}
+              animate={{ opacity: 1, scale: 1.5, x: '-50%', y: '-50%' }}
+              exit={{ opacity: 0, scale: 0.5, x: '100%', y: '100%', transition: { duration: 0.5 } }}
+              className="fixed top-1/2 left-1/2 z-[200] pointer-events-none"
+            >
+               <div className="flex flex-col items-center gap-4">
+                  <div className="bg-red-600 text-white px-4 py-1 rounded-full font-black italic animate-pulse shadow-[0_0_20px_rgba(220,38,38,0.6)]">ÚJ ÁTOK!</div>
+                  <CardComponent card={state.pendingHex} gameState={state} />
+               </div>
+            </motion.div>
+          )}
+
           {viewingPile && state.player && (
             <PileOverlay 
-              title={viewingPile === 'deck' ? 'Meglévő Kártyák (Deck)' : viewingPile === 'draw' ? 'Akták (Draw Pile)' : 'Daráló (Discard Pile)'}
-              cards={viewingPile === 'deck' ? state.player.deck : viewingPile === 'draw' ? state.player.drawPile : state.player.discardPile}
+              title={
+                viewingPile === 'deck' ? 'Meglévő Kártyák (Deck)' : 
+                viewingPile === 'draw' ? 'Akták (Draw Pile)' : 
+                viewingPile === 'discard' ? 'Daráló (Discard Pile)' : 
+                'Kimerült Készlet (Exhaust Pile)'
+              }
+              cards={
+                viewingPile === 'deck' ? state.player.deck : 
+                viewingPile === 'draw' ? state.player.drawPile : 
+                viewingPile === 'discard' ? state.player.discardPile : 
+                state.player.exhaustPile
+              }
+              gameState={state}
               onClose={() => setViewingPile(null)}
             />
           )}

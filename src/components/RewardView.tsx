@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { motion } from 'motion/react';
-import { RewardState, Card, Relic } from '../types';
+import { RewardState, Card, Relic, GameState } from '../types';
 import { Coins, Zap, Layers, ChevronRight } from 'lucide-react';
 import CardComponent from './CardComponent';
 
@@ -12,6 +12,7 @@ interface RewardViewProps {
   onSkip: () => void;
   hasCollectedGold: boolean;
   hasCollectedRelic: boolean;
+  gameState: GameState;
   onHover: (e: React.MouseEvent, title: string, description: string) => void;
   onLeave: () => void;
 }
@@ -24,6 +25,7 @@ const RewardView: React.FC<RewardViewProps> = ({
   onSkip,
   hasCollectedGold,
   hasCollectedRelic,
+  gameState,
   onHover,
   onLeave
 }) => {
@@ -38,6 +40,7 @@ const RewardView: React.FC<RewardViewProps> = ({
             <CardComponent 
               key={card.id} 
               card={card} 
+              gameState={gameState}
               onClick={() => {
                 onChooseCard(card);
                 setShowCardSelect(false);

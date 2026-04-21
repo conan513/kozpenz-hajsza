@@ -14,6 +14,9 @@ export interface Card {
   effect: (gameState: GameState, targetId?: string) => GameState;
   rarity: 'Common' | 'Uncommon' | 'Rare';
   needsTarget?: boolean;
+  exhaust?: boolean;
+  retain?: boolean;
+  characterClass?: CharacterClass | 'Colorless';
 }
 
 export type EnemyIntentType = 'Attack' | 'Defend' | 'Buff' | 'Debuff' | 'Curse';
@@ -54,6 +57,15 @@ export interface Potion {
   effect: (gameState: GameState, targetId?: string) => GameState;
 }
 
+export interface Ally {
+  id: string;
+  name: string;
+  description: string;
+  icon: string; // lucide icon name
+  active: boolean; // Just a flag if we need it
+  onTurnEnd: (state: GameState) => GameState;
+}
+
 export interface Player {
   class: CharacterClass;
   maxHp: number;
@@ -70,10 +82,12 @@ export interface Player {
   relics: Relic[];
   potions: Potion[];
   maxPotions: number;
+  allies: Ally[];
+  maxAllies: number;
 }
 
 export interface StatusEffect {
-  type: 'Strength' | 'Weak' | 'Vulnerable' | 'Dexterity' | 'Frail' | 'Poison';
+  type: 'Strength' | 'Weak' | 'Vulnerable' | 'Dexterity' | 'Frail' | 'Poison' | 'NextTurnEnergy' | 'NextTurnDraw' | 'NextTurnBlock';
   stacks: number;
 }
 
@@ -136,4 +150,7 @@ export interface GameState {
   reward: RewardState | null;
   shopInventory: ShopInventory | null;
   cardsPlayedThisTurn: string[]; // List of card IDs played in the current turn
+  cardsDiscardedThisTurn: number; // Number of cards discarded this turn
+  pendingHex: Card | null; // Card that is currently being animated as added to the deck
 }
+

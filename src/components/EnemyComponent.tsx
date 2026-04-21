@@ -38,8 +38,10 @@ const EnemyComponent: React.FC<EnemyComponentProps> = ({ enemy, playerStatusEffe
       >
         {enemy.intent?.type === 'Attack' && <div className="flex items-center gap-1 text-red-500 font-bold"><Sword size={14} /> {displayValue}</div>}
         {enemy.intent?.type === 'Defend' && <div className="flex items-center gap-1 text-blue-500 font-bold"><Shield size={14} /> {enemy.intent.value}</div>}
-        {enemy.intent?.type === 'Buff' && <div className="flex items-center gap-1 text-green-500 font-bold"><ChevronUp size={14} /> UP</div>}
+        {enemy.intent?.type === 'Buff' && <div className="text-green-500 font-bold flex items-center gap-1"><ChevronUp size={18} /></div>}
+        {(enemy.intent?.type === 'Debuff' || enemy.intent?.type === 'Curse') && <div className="text-red-500 font-bold flex items-center gap-1"><ChevronDown size={18} /></div>}
       </motion.div>
+
 
       {/* Enemy Sprite */}
       <motion.div

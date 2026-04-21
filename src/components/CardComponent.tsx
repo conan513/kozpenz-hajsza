@@ -1,33 +1,76 @@
 import React from 'react';
 import { motion } from 'motion/react';
-import { Card } from '../types';
+import { Card, GameState } from '../types';
 import { Sword, Shield, Zap, Sparkles, AlertCircle } from 'lucide-react';
 
 interface CardProps {
   card: Card;
+  gameState: GameState;
   onClick?: () => void;
   disabled?: boolean;
   isDragging?: boolean;
 }
 
-const CardComponent: React.FC<CardProps> = ({ card, onClick, disabled, isDragging }) => {
+const CardComponent: React.FC<CardProps> = ({ card, gameState, onClick, disabled, isDragging }) => {
+  const getDynamicDescription = () => {
+    // Csak harc közben számoljuk a módosítókat, egyébként az alapleírást mutatjuk
+    if (!gameState.player || gameState.view !== 'Combat') return card.description;
+
+    
+    const strength = gameState.player.statusEffects.find(s => s.type === 'Strength')?.stacks || 0;
+    const dexterity = gameState.player.statusEffects.find(s => s.type === 'Dexterity')?.stacks || 0;
+    const isWeak = gameState.player.statusEffects.some(s => s.type === 'Weak');
+
+    let desc = card.description;
+
+    // Sebzés kalkuláció (Numbers followed by "sebzés")
+    desc = desc.replace(/(\d+)(\s+sebzést)/g, (match, val, suffix) => {
+      let num = parseInt(val);
+      let finalNum = num + strength;
+      if (isWeak) finalNum = Math.floor(finalNum * 0.75);
+      const color = finalNum > num ? 'text-green-400' : finalNum < num ? 'text-red-400' : '';
+      return `<span class="${color} font-bold">${finalNum}</span>${suffix}`;
+    });
+
+    // Védekezés kalkuláció (Numbers followed by "Cenzúrát" or "Blokkot")
+    desc = desc.replace(/(\d+)(\s+(Cenzúrát|Blokkot))/g, (match, val, suffix) => {
+      let num = parseInt(val);
+      let finalNum = num + dexterity;
+      const color = finalNum > num ? 'text-green-400' : finalNum < num ? 'text-red-400' : '';
+      return `<span class="${color} font-bold">${finalNum}</span>${suffix}`;
+    });
+
+    return desc;
+  };
+
   const getCardStyle = () => {
+    let base = '';
     switch (card.type) {
-      case 'Attack': return 'border-[#8B0000]/70 bg-gradient-to-br from-[#2A0A0A] to-[#4A0E0E]';
-      case 'Skill': return 'border-[#0d9488]/70 bg-gradient-to-br from-[#102A2A] to-[#164040]';
-      case 'Power': return 'border-bento-gold/70 bg-gradient-to-br from-[#3D2F14] to-[#5C4510] shadow-[0_0_15px_rgba(212,175,55,0.3)]';
-      case 'Hex': return 'border-purple-900/70 bg-gradient-to-br from-[#1A1A1A] to-[#2D1B2E]';
-      default: return 'border-bento-border bg-bento-panel';
+      case 'Attack': base = 'border-[#8B0000]/70 bg-gradient-to-br from-[#2A0A0A] to-[#4A0E0E]'; break;
+      case 'Skill': base = 'border-[#0d9488]/70 bg-gradient-to-br from-[#102A2A] to-[#164040]'; break;
+      case 'Power': base = 'border-purple-500/70 bg-gradient-to-br from-[#2D1B4E] to-[#4C1D95]'; break;
+      case 'Hex': base = 'border-stone-900/70 bg-gradient-to-br from-[#1A1A1A] to-[#292929]'; break;
+      default: base = 'border-bento-border bg-bento-panel'; break;
     }
+    if (card.characterClass === 'Colorless') {
+       base = 'border-gray-400/70 bg-gradient-to-br from-gray-700 to-gray-800';
+    }
+    return base;
   };
 
   const getIcon = () => {
     switch (card.type) {
       case 'Attack': return <Sword size={16} className="text-red-400" />;
       case 'Skill': return <Shield size={16} className="text-teal-400" />;
-      case 'Power': return <Sparkles size={16} className="text-bento-gold" />;
-      case 'Hex': return <AlertCircle size={16} className="text-purple-400" />;
+      case 'Power': return <Sparkles size={16} className="text-purple-300" />;
+      case 'Hex': return <AlertCircle size={16} className="text-stone-400" />;
     }
+  };
+
+  const getRarityStyle = () => {
+     if (card.rarity === 'Rare') return 'ring-2 ring-bento-gold/80 drop-shadow-[0_0_12px_rgba(246,173,85,0.6)]';
+     if (card.rarity === 'Uncommon') return 'ring-1 ring-gray-300/70 drop-shadow-[0_0_8px_rgba(200,200,200,0.5)]';
+     return ''; // Common has no extra glow
   };
 
   return (
@@ -37,7 +80,7 @@ const CardComponent: React.FC<CardProps> = ({ card, onClick, disabled, isDraggin
       onClick={disabled ? undefined : onClick}
       className={`relative w-28 h-40 md:w-32 md:h-44 rounded-sm border-2 p-1.5 md:p-2 lux-shadow cursor-pointer select-none transition-all overflow-hidden
         ${getCardStyle()}
-        ${card.rarity === 'Rare' ? 'ring-2 ring-bento-gold/80 drop-shadow-[0_0_8px_rgba(212,175,55,0.5)]' : ''}
+        ${getRarityStyle()}
         ${disabled ? 'opacity-40 grayscale cursor-not-allowed shadow-none' : 'opacity-100 hover:shadow-2xl hover:z-50'}
       `}
     >
@@ -62,9 +105,10 @@ const CardComponent: React.FC<CardProps> = ({ card, onClick, disabled, isDraggin
       </div>
 
       <div className="relative z-10 bg-black/50 rounded-sm p-1.5 h-14 flex flex-col justify-center border-t border-white/5">
-        <p className="text-bento-text-dim font-mono text-[8px] md:text-[9px] leading-snug text-center">
-          {card.description}
-        </p>
+        <div 
+          className="text-bento-text-dim font-mono text-[8px] md:text-[9px] leading-snug text-center"
+          dangerouslySetInnerHTML={{ __html: getDynamicDescription() }}
+        />
       </div>
 
       <div className="absolute bottom-1 right-2 z-10">

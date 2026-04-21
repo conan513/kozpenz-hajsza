@@ -1,14 +1,15 @@
 import React from 'react';
 import { motion } from 'motion/react';
 import { GameEvent, EventChoice, GameState, ShopInventory, Card, Relic, Potion } from '../types';
-import { Coffee, ShoppingCart, HelpCircle, Coins, Heart, Zap, Tag, FlaskConical, PackageOpen, TowerControl, Trash2, X } from 'lucide-react';
+import { Coffee, ShoppingCart, HelpCircle, Coins, Heart, Zap, Tag, FlaskConical, PackageOpen, TowerControl, Trash2, X, Sparkles } from 'lucide-react';
 import CardComponent from './CardComponent';
 
 export const PileOverlay: React.FC<{ 
   title: string, 
   cards: Card[], 
+  gameState: GameState,
   onClose: () => void 
-}> = ({ title, cards, onClose }) => (
+}> = ({ title, cards, gameState, onClose }) => (
   <motion.div 
     initial={{ opacity: 0 }}
     animate={{ opacity: 1 }}
@@ -36,7 +37,7 @@ export const PileOverlay: React.FC<{
             <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 lg:grid-cols-5 xl:grid-cols-6 gap-8 justify-items-center p-4">
                 {cards.map((card, i) => (
                     <div key={`${card.id}-${i}`} className="transform md:scale-110 mb-4 hover:z-50">
-                        <CardComponent card={card} />
+                        <CardComponent card={card} gameState={gameState} />
                     </div>
                 ))}
             </div>
@@ -179,6 +180,7 @@ interface ShopViewProps extends SpecialViewProps {
   onBuyPotion: (potion: Potion, price: number) => void;
   onRemoveCard: (price: number) => void;
   playerHasFullPotions: boolean;
+  gameState: GameState;
   onHover: (e: React.MouseEvent, title: string, description: string) => void;
   onLeave: () => void;
 }
@@ -192,6 +194,7 @@ export const ShopView: React.FC<ShopViewProps> = ({
   onRemoveCard,
   onBackToMap,
   playerHasFullPotions,
+  gameState,
   onHover,
   onLeave
 }) => {
@@ -210,22 +213,54 @@ export const ShopView: React.FC<ShopViewProps> = ({
 
     <div className="grid grid-cols-1 md:grid-cols-12 gap-8 flex-1">
       {/* Cards Section */}
-      <div className="md:col-span-8 flex flex-col gap-4">
-        <h3 className="font-bold text-bento-text-dim uppercase tracking-widest text-sm flex items-center gap-2">
-            <Tag size={16} /> Irányított Pályázatok (Kártyák)
-        </h3>
-        <div className="flex flex-wrap gap-4">
-          {inventory.cards.map(({ item, price }, i) => {
-            const canAfford = gold >= price;
-            return (
-              <div key={item.id + i} className="flex flex-col items-center gap-2 relative">
-                <CardComponent card={item} disabled={!canAfford} onClick={canAfford ? () => onBuyCard(item, price) : undefined} />
-                <div className={`flex items-center gap-1 font-mono font-bold text-sm bg-black/50 px-2 py-1 rounded-full border ${canAfford ? 'text-bento-gold border-bento-gold/30' : 'text-red-500 border-red-500/30 line-through'}`}>
-                    <span>{price}</span> <Coins size={10} />
+      <div className="md:col-span-8 flex flex-col gap-6">
+        <div>
+          <h3 className="font-bold text-bento-text-dim uppercase tracking-widest text-sm flex items-center gap-2 mb-4">
+              <Tag size={16} /> Irányított Pályázatok (Karakter kártyák)
+          </h3>
+          <div className="flex flex-wrap gap-4">
+            {inventory.cards.slice(0, 8).map(({ item, price }, i) => {
+              const canAfford = gold >= price;
+              return (
+                <div key={item.id + i} className="flex flex-col items-center gap-2 relative">
+                  <CardComponent card={item} gameState={gameState} disabled={!canAfford} onClick={canAfford ? () => onBuyCard(item, price) : undefined} />
+                  <div className={`flex items-center gap-1 font-mono font-bold text-sm bg-black/50 px-2 py-1 rounded-full border ${canAfford ? 'text-bento-gold border-bento-gold/30' : 'text-red-500 border-red-500/30 line-through'}`}>
+                      <span>{price}</span> <Coins size={10} />
+                  </div>
                 </div>
-              </div>
-            );
-          })}
+              );
+            })}
+          </div>
+        </div>
+        
+        <div className="flex gap-8 border-t border-white/10 pt-6">
+          <div>
+            <h3 className="font-bold text-gray-400 uppercase tracking-widest text-sm flex items-center gap-2 mb-4">
+                <Sparkles size={16} className="text-gray-300" /> Független (Colorless)
+            </h3>
+            {inventory.cards[8] && (
+               <div className="flex flex-col items-center gap-2 relative">
+                  <CardComponent card={inventory.cards[8].item} gameState={gameState} disabled={gold < inventory.cards[8].price} onClick={gold >= inventory.cards[8].price ? () => onBuyCard(inventory.cards[8].item, inventory.cards[8].price) : undefined} />
+                  <div className={`flex items-center gap-1 font-mono font-bold text-sm bg-black/50 px-2 py-1 rounded-full border ${gold >= inventory.cards[8].price ? 'text-gray-300 border-gray-400/30' : 'text-red-500 border-red-500/30 line-through'}`}>
+                      <span>{inventory.cards[8].price}</span> <Coins size={10} />
+                  </div>
+               </div>
+            )}
+          </div>
+          
+          <div>
+            <h3 className="font-bold text-bento-gold uppercase tracking-widest text-sm flex items-center gap-2 mb-4">
+                <Sparkles size={16} className="text-bento-gold" /> Kiemelt Ritkaság
+            </h3>
+            {inventory.cards[9] && (
+               <div className="flex flex-col items-center gap-2 relative">
+                  <CardComponent card={inventory.cards[9].item} gameState={gameState} disabled={gold < inventory.cards[9].price} onClick={gold >= inventory.cards[9].price ? () => onBuyCard(inventory.cards[9].item, inventory.cards[9].price) : undefined} />
+                  <div className={`flex items-center gap-1 font-mono font-bold text-sm bg-black/50 px-2 py-1 rounded-full border ${gold >= inventory.cards[9].price ? 'text-bento-gold border-bento-gold/50 shadow-[0_0_10px_rgba(246,173,85,0.2)]' : 'text-red-500 border-red-500/30 line-through'}`}>
+                      <span>{inventory.cards[9].price}</span> <Coins size={10} />
+                  </div>
+               </div>
+            )}
+          </div>
         </div>
       </div>
 

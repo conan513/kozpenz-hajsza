@@ -1,6 +1,6 @@
 import { GameState, Card, Enemy, EnemyIntentType, MapNode, Player, Relic, ShopInventory, Potion } from './types';
 import { ENEMIES } from './constants';
-import { getRewardPool, UNIQUE_CARDS } from './lib/cardLibrary';
+import { getRewardPool, getColorlessPool, UNIQUE_CARDS, getWeightedRewardCards } from './lib/cardLibrary';
 import { RELICS } from './lib/relicLibrary';
 import { POTIONS } from './lib/potionLibrary';
 
@@ -25,12 +25,29 @@ export const shuffle = <T>(array: T[]): T[] => {
   return newArray;
 };
 
+export const handleDiscardDamage = (playerHp: number, discardedCards: Card[], currentLogs: string[]): { nextHp: number, nextLogs: string[] } => {
+  let nextHp = playerHp;
+  let nextLogs = [...currentLogs];
+  
+  discardedCards.forEach(card => {
+    if (card.id.startsWith('hx-bureaucracy')) {
+      nextHp = Math.max(1, nextHp - 3);
+      nextLogs = [`A Bürokrácia miatt vesztettél 3 HP-t az eldobáskor.`, ...nextLogs];
+    }
+  });
+  
+  return { nextHp, nextLogs };
+};
+
 export const generateShopInventory = (player: Player): ShopInventory => {
-  const pool = getRewardPool(player.class);
-  const commonCards = shuffle(pool.filter(c => c.rarity === 'Common')).slice(0, 5);
-  const uncommonCards = shuffle(pool.filter(c => c.rarity === 'Uncommon')).slice(0, 1);
-  const rareCards = shuffle(pool.filter(c => c.rarity === 'Rare')).slice(0, 1);
-  const allCards = [...commonCards, ...uncommonCards, ...rareCards];
+  const characterCards = getWeightedRewardCards(player.class, 8);
+  const colorlessCard = getWeightedRewardCards('Colorless', 1)[0];
+  
+  const combinedRarePool = [...getRewardPool(player.class).filter(c => c.rarity === 'Rare'), ...getColorlessPool().filter(c => c.rarity === 'Rare')];
+  const rareCardBase = combinedRarePool.length > 0 ? shuffle(combinedRarePool)[0] : getWeightedRewardCards(player.class, 1)[0];
+  const rareCard = { ...rareCardBase, id: `${rareCardBase.id}-${Math.random()}` };
+  
+  const allCards = [...characterCards, colorlessCard, rareCard];
 
   // Pick 3 random relics not already owned
   const availableRelics = RELICS.filter(r => !player.relics.find(pr => pr.id === r.id));
@@ -61,6 +78,8 @@ export const createInitialState = (): GameState => ({
   reward: null,
   shopInventory: null,
   cardsPlayedThisTurn: [],
+  cardsDiscardedThisTurn: 0,
+  pendingHex: null,
 });
 
 export const generateMap = (): MapNode[] => {
@@ -155,6 +174,7 @@ export const startCombat = (state: GameState, enemyTemplate: typeof ENEMIES[0], 
     hand: shuffledDeck.slice(0, 5),
     discardPile: [],
     exhaustPile: [],
+    statusEffects: [],
   };
 
   const isEliteOrBoss = node ? (node.type === 'Elite' || node.type === 'Boss') : false;
@@ -201,25 +221,37 @@ export const generateEnemyIntent = (isEliteOrBoss: boolean = false): { type: Ene
 export const resolveEnemyTurn = (state: GameState): GameState => {
   if (state.enemies.length === 0 || !state.player) return state;
   
-  let playerHp = state.player.hp;
-  let playerBlock = state.player.block;
-  let currentPlayerStatus = [...state.player.statusEffects];
-  let playerDiscardPile = [...state.player.discardPile];
-  let logs = [...state.logs];
-  let newEnemies = [...state.enemies];
+  let tempState = { ...state };
+  
+  // 1. Trigger Allies (End of Player Turn)
+  state.player.allies.forEach(ally => {
+     tempState = ally.onTurnEnd(tempState);
+  });
+  
+  // Refresh variables after allies
+  if (!tempState.player) return tempState;
+  let playerHp = tempState.player.hp;
+  let playerBlock = tempState.player.block;
+  let currentPlayerStatus = [...tempState.player.statusEffects];
+  let playerDiscardPile = [...tempState.player.discardPile];
+  let logs = [...tempState.logs];
+  let newEnemies = [...tempState.enemies];
+  
+  newEnemies = newEnemies.filter(e => e.hp > 0);
 
+  // 2. Enemy actions
   for (let i = 0; i < newEnemies.length; i++) {
     const enemy = newEnemies[i];
     if (enemy.hp <= 0) continue; 
     
     let enemyBlock = enemy.block;
     
-    // Resolve Poison (Infláció) at START of enemy turn
+    // Resolve Poison (Botrány) at START of enemy turn
     const poisonEffect = enemy.statusEffects.find(s => s.type === 'Poison');
     let currentEnemyHp = enemy.hp;
     if (poisonEffect) {
        const poisonDamage = poisonEffect.stacks;
-       logs = [`${enemy.name} sebződik az Inflációtól: ${poisonDamage}`, ...logs];
+       logs = [`${enemy.name} belebukik a Botrányba: ${poisonDamage} sebzés`, ...logs];
        currentEnemyHp = Math.max(0, enemy.hp - poisonDamage);
        newEnemies[i] = { ...enemy, hp: currentEnemyHp };
     }
@@ -249,16 +281,20 @@ export const resolveEnemyTurn = (state: GameState): GameState => {
         : [...enemy.statusEffects, { type: 'Strength' as const, stacks: 2 }];
       newEnemies[i] = { ...newEnemies[i], statusEffects: newStatus };
     } else if (enemy.intent.type === 'Debuff') {
-      logs = [`${enemy.name} megvágja a költségvetésed! (+${enemy.intent.value} Infláció)`, ...logs];
-      const existing = currentPlayerStatus.find(s => s.type === 'Poison');
+      const debuffType = Math.random() > 0.5 ? 'Weak' : 'Vulnerable';
+      const debuffName = debuffType === 'Weak' ? 'Gyengeséget' : 'Sebezhetőséget';
+      logs = [`${enemy.name} megvádol valamivel! (+${enemy.intent.value} kör ${debuffName})`, ...logs];
+      
+      const existing = currentPlayerStatus.find(s => s.type === debuffType);
       currentPlayerStatus = existing
-        ? currentPlayerStatus.map(s => s.type === 'Poison' ? { ...s, stacks: s.stacks + (enemy.intent.value || 0) } : s)
-        : [...currentPlayerStatus, { type: 'Poison' as const, stacks: (enemy.intent.value || 0) }];
+        ? currentPlayerStatus.map(s => s.type === debuffType ? { ...s, stacks: s.stacks + (enemy.intent.value || 0) } : s)
+        : [...currentPlayerStatus, { type: debuffType as any, stacks: (enemy.intent.value || 0) }];
+
     } else if (enemy.intent.type === 'Curse') {
       logs = [`${enemy.name} egy kompromittáló aktát csúsztatott a zsebedbe! (Bürokrácia a dobópakliba)`, ...logs];
       const hexCard = UNIQUE_CARDS.find(c => c.id === 'hx-bureaucracy');
       if (hexCard) {
-         playerDiscardPile.push({ ...hexCard, id: `${hexCard.id}-${Math.random()}` });
+         tempState = { ...tempState, pendingHex: { ...hexCard, id: `${hexCard.id}-${Math.random()}` } };
       }
     }
     
@@ -269,7 +305,7 @@ export const resolveEnemyTurn = (state: GameState): GameState => {
     newEnemies[i] = {
       ...newEnemies[i],
       block: enemyBlock,
-      intent: generateEnemyIntent(state.currentNodeId?.includes('Elite') || state.currentNodeId?.includes('Boss')),
+      intent: generateEnemyIntent(tempState.currentNodeId?.includes('Elite') || tempState.currentNodeId?.includes('Boss')),
       statusEffects: nextEnemyStatus
     };
   }
@@ -277,35 +313,58 @@ export const resolveEnemyTurn = (state: GameState): GameState => {
   // Remove dead enemies
   newEnemies = newEnemies.filter(e => e.hp > 0);
 
-  // Resolve Player Poison (Infláció) at the transition to Player Turn
+  // Resolve Player Poison (Botrány) at the transition to Player Turn
   const playerPoison = currentPlayerStatus.find(s => s.type === 'Poison');
   if (playerPoison) {
      playerHp = Math.max(0, playerHp - playerPoison.stacks);
-     logs = [`Rád is sújt az Infláció: ${playerPoison.stacks} sebzés`, ...logs];
+     logs = [`A rágalomhadjárat sebez: ${playerPoison.stacks} sebzés`, ...logs];
   }
+
+  // 3. Process Delayed Effects (NextTurn...)
+  let bonusEnergy = 0;
+  let bonusDraw = 0;
+  let bonusBlock = 0;
+  
+  currentPlayerStatus.forEach(s => {
+    if (s.type === 'NextTurnEnergy') bonusEnergy += s.stacks;
+    if (s.type === 'NextTurnDraw') bonusDraw += s.stacks;
+    if (s.type === 'NextTurnBlock') bonusBlock += s.stacks;
+  });
+
+  if (bonusEnergy > 0) logs.push(`Kaptál ${bonusEnergy} extra Lendületet!`);
+  if (bonusDraw > 0) logs.push(`Kaptál ${bonusDraw} extra Kártyát!`);
+  if (bonusBlock > 0) logs.push(`Kaptál ${bonusBlock} extra Cenzúrát!`);
 
   // Reset for next turn
   const nextPlayerStatus = currentPlayerStatus
+     .filter(s => s.type !== 'NextTurnEnergy' && s.type !== 'NextTurnDraw' && s.type !== 'NextTurnBlock')
      .map(s => s.type === 'Strength' || s.type === 'Dexterity' ? s : { ...s, stacks: s.stacks - 1 })
      .filter(s => s.stacks > 0);
 
+  const retainedCards = tempState.player.hand.filter(c => c.retain);
+  const discardedCards = tempState.player.hand.filter(c => !c.retain);
+  
+  const { nextHp: hpAfterDiscard, nextLogs: logsAfterDiscard } = handleDiscardDamage(playerHp, discardedCards, logs);
+  playerHp = hpAfterDiscard;
+  logs = logsAfterDiscard;
+
   const nextPlayer = {
-    ...state.player,
+    ...tempState.player,
     hp: playerHp,
-    block: 0, // Block expires at end of turn
-    energy: state.player.maxEnergy,
-    hand: [], // Hand cleared
-    drawPile: [...state.player.drawPile],
-    discardPile: [...playerDiscardPile, ...state.player.hand],
+    block: bonusBlock, // Starts with bonus block instead of 0
+    energy: tempState.player.maxEnergy + bonusEnergy, // Add bonus energy
+    hand: retainedCards,
+    drawPile: [...tempState.player.drawPile],
+    discardPile: [...playerDiscardPile, ...discardedCards],
     statusEffects: nextPlayerStatus
   };
   
   // Draw new cards
-  const drawCount = 5;
+  const drawCount = 5 + bonusDraw;
   const replenishAndDraw = (p: typeof nextPlayer) => {
     let currentDrawPile = [...p.drawPile];
     let currentDiscardPile = [...p.discardPile];
-    let currentHand = [];
+    let currentHand = [...p.hand];
     
     for(let i = 0; i < drawCount; i++) {
         if (currentDrawPile.length === 0) {
@@ -320,13 +379,15 @@ export const resolveEnemyTurn = (state: GameState): GameState => {
   };
 
   const nextState = {
-    ...state,
+    ...tempState,
     player: replenishAndDraw(nextPlayer),
     enemies: newEnemies,
     turn: 'Player' as const,
-    turnCount: state.turnCount + 1,
+    turnCount: tempState.turnCount + 1,
     logs,
     cardsPlayedThisTurn: [],
+    cardsDiscardedThisTurn: 0,
+    pendingHex: null,
   };
 
   return triggerRelics(nextState, 'onTurnStart');

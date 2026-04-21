@@ -40,10 +40,28 @@ const EFFECT_DATA: Record<StatusEffect['type'], { name: string, description: str
     color: 'text-yellow-600 border-yellow-600/30'
   },
   Poison: {
-    name: 'Infláció (DoT)',
+    name: 'Botrány (Leleplezés)',
     description: 'Kör elején sebzi a karaktert annyival, amennyi a jelző száma, majd 1-gyel csökken.',
     icon: <TrendingUp size={10} />,
     color: 'text-purple-400 border-purple-400/30'
+  },
+  NextTurnEnergy: {
+    name: 'Késleltetett Lendület',
+    description: 'A következő körödben extra Energiát kapsz.',
+    icon: <Zap size={10} />,
+    color: 'text-yellow-400 border-yellow-400/30'
+  },
+  NextTurnDraw: {
+    name: 'Késleltetett Húzás',
+    description: 'A következő körödben extra Kártyákat húzol.',
+    icon: <ArrowDownNarrowWide size={10} />,
+    color: 'text-blue-400 border-blue-400/30'
+  },
+  NextTurnBlock: {
+    name: 'Késleltetett Cenzúra',
+    description: 'A következő körödben extra Blokkot nyersz.',
+    icon: <Shield size={10} />,
+    color: 'text-cyan-400 border-cyan-400/30'
   }
 };
 
