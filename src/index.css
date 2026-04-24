@@ -71,10 +71,13 @@
 
 /* ── Card Shimmer (Rare) ─────────────────────────────────────────────────────── */
 @keyframes shimmer {
-  0%   { background-position: -200% center; }
-  100% { background-position: 200% center; }
+  0%   { transform: translateX(-100%); }
+  100% { transform: translateX(100%); }
 }
 
+.card-rare-shimmer {
+  overflow: hidden;
+}
 .card-rare-shimmer::after {
   content: '';
   position: absolute;
@@ -88,12 +91,17 @@
     rgba(212, 175, 55, 0.25) 60%,
     transparent 80%
   );
-  background-size: 200% auto;
+  /* Use transform instead of background-position – stays on GPU compositor thread */
+  transform: translateX(-100%);
   animation: shimmer 2.8s linear infinite;
   pointer-events: none;
   z-index: 20;
+  will-change: transform;
 }
 
+.card-uncommon-shimmer {
+  overflow: hidden;
+}
 .card-uncommon-shimmer::after {
   content: '';
   position: absolute;
@@ -105,10 +113,11 @@
     rgba(200, 200, 220, 0.15) 50%,
     transparent 70%
   );
-  background-size: 200% auto;
+  transform: translateX(-100%);
   animation: shimmer 3.5s linear infinite;
   pointer-events: none;
   z-index: 20;
+  will-change: transform;
 }
 
 /* ── Screen Flash ─────────────────────────────────────────────────────────────── */
@@ -189,3 +198,38 @@
 }
 .audio-btn:hover { opacity: 1; }
 .audio-btn.muted { opacity: 0.3; }
+
+/* ── SVG Sprite Animations (CSS-only, no Framer Motion = compositor thread) ── */
+@keyframes spriteIdle {
+  0%, 100% { transform: translateY(0px) scaleY(1); }
+  40%       { transform: translateY(-4px) scaleY(1.02); }
+  70%       { transform: translateY(2px) scaleY(0.98); }
+}
+@keyframes spriteAttackPlayer {
+  0%   { transform: translateX(0); }
+  40%  { transform: translateX(18px); }
+  100% { transform: translateX(0); }
+}
+@keyframes spriteAttackEnemy {
+  0%   { transform: translateX(0); }
+  40%  { transform: translateX(-18px); }
+  100% { transform: translateX(0); }
+}
+@keyframes spriteHurt {
+  0%,100% { transform: translateX(0) brightness(1); filter: none; }
+  20%     { transform: translateX(-5px); filter: brightness(3) saturate(0) sepia(1); }
+  50%     { transform: translateX(5px);  filter: brightness(2); }
+  80%     { transform: translateX(-3px); filter: brightness(1.5); }
+}
+@keyframes spriteDead {
+  0%   { opacity: 1; transform: scale(1) rotate(0deg); filter: none; }
+  50%  { opacity: 0.5; transform: scale(1.1) rotate(8deg); filter: blur(1px) saturate(3); }
+  100% { opacity: 0; transform: scale(0.5) rotate(20deg); filter: blur(6px); }
+}
+
+.sprite-idle         { animation: spriteIdle 2.2s ease-in-out infinite; }
+.sprite-attack-player{ animation: spriteAttackPlayer 0.28s ease-in-out forwards; }
+.sprite-attack-enemy { animation: spriteAttackEnemy 0.28s ease-in-out forwards; }
+.sprite-hurt         { animation: spriteHurt 0.38s ease-out; }
+.sprite-dead         { animation: spriteDead 0.7s ease-in forwards; }
+

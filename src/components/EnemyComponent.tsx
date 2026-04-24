@@ -91,7 +91,7 @@ const EnemyComponent: React.FC<EnemyComponentProps> = React.memo(({
 
       {/* Sprite */}
       <div className="relative">
-        <motion.div
+        <div
           key={`sprite-${enemy.id}`}
           className="w-28 h-28 md:w-40 md:h-40 flex items-center justify-center relative group"
         >
@@ -108,7 +108,7 @@ const EnemyComponent: React.FC<EnemyComponentProps> = React.memo(({
           <div className="absolute top-0 left-0 z-10 w-full pr-4">
             <StatusEffectList effects={enemy.statusEffects} onHover={onHover} onLeave={onLeave} />
           </div>
-        </motion.div>
+        </div>
 
         {/* Death overlay */}
         <AnimatePresence>
@@ -124,7 +124,7 @@ const EnemyComponent: React.FC<EnemyComponentProps> = React.memo(({
         </AnimatePresence>
       </div>
 
-      {/* Name + HP bar */}
+      {/* Name + HP bar – CSS transition instead of Framer Motion spring */}
       <div className="w-40 md:w-56">
         <div className="flex justify-between items-end mb-1 px-1">
           <span className="text-white font-bold text-[10px] md:text-sm uppercase tracking-tight truncate max-w-[120px]">
@@ -140,12 +140,15 @@ const EnemyComponent: React.FC<EnemyComponentProps> = React.memo(({
             <span className="text-bento-text-dim font-mono text-[10px]">{enemy.hp}/{enemy.maxHp}</span>
           </div>
         </div>
+        {/* Pure CSS transition — no Framer Motion overhead on every turn */}
         <div className="h-3 w-full bg-slate-900 rounded-full border border-bento-border overflow-hidden shadow-inner">
-          <motion.div
-            initial={{ width: '100%' }}
-            animate={{ width: `${hpPct}%` }}
-            transition={{ type: 'spring', stiffness: 120, damping: 20 }}
+          <div
             className={`h-full rounded-full ${hpBarClass}`}
+            style={{
+              width: `${hpPct}%`,
+              transition: 'width 0.4s cubic-bezier(0.25, 0.46, 0.45, 0.94)',
+              willChange: 'width',
+            }}
           />
         </div>
       </div>

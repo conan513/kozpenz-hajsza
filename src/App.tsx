@@ -315,7 +315,8 @@ export default function App() {
     });
 
     setTimeout(() => setIsProcessing(false), 200);
-  }, [isProcessing, state.player, state.enemies, state.turn, soundEngine]);
+  // soundEngine is a module-level singleton – intentionally excluded from deps
+  }, [isProcessing, state.player, state.enemies, state.turn]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const handleEnemyClick = useCallback((enemyId: string) => {
     if (targetingCard) {
@@ -643,7 +644,7 @@ export default function App() {
                         <span className="text-bento-accent font-bold text-xs">{state.player.hp} / {state.player.maxHp}</span>
                       </div>
                       <div className="h-2 w-full bg-slate-800 rounded-full overflow-hidden border border-white/5">
-                        <motion.div animate={{ width: `${(state.player.hp / state.player.maxHp) * 100}%` }} className="h-full bg-bento-accent" />
+                        <div className="h-full bg-bento-accent" style={{ width: `${(state.player.hp / state.player.maxHp) * 100}%`, transition: 'width 0.4s cubic-bezier(0.25,0.46,0.45,0.94)', willChange: 'width' }} />
                       </div>
                     </div>
                     <div className="flex flex-col"><span className="text-[10px] text-bento-text-dim uppercase">Közpénz</span><span className="text-bento-gold font-bold">{state.gold} m. Ft</span></div>
@@ -710,7 +711,7 @@ export default function App() {
                   </div>
 
                   <div className="col-span-1 md:col-span-7 flex items-end justify-center pb-6 relative z-20 overflow-visible">
-                    <AnimatePresence mode="popLayout" initial={false}>
+                    <AnimatePresence mode="sync" initial={false}>
                       {state.player.hand.map((card, i) => {
                         const offset = i - (state.player!.hand.length - 1) / 2;
                         const marginX = state.player!.hand.length <= 4 ? -10 : Math.max(-90, -20 - (state.player!.hand.length - 4) * 12);

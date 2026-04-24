@@ -1,5 +1,4 @@
 import React, { useEffect, useRef } from 'react';
-import { motion } from 'motion/react';
 
 /** Animált parliament szilhuett + ambient harc háttér */
 export const CombatBackground: React.FC = React.memo(() => {
@@ -9,15 +8,21 @@ export const CombatBackground: React.FC = React.memo(() => {
   useEffect(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    const ctx = canvas.getContext('2d', { alpha: false }); // Performance hint
+    // willReadFrequently: false since we only write; alpha: false avoids blending overhead
+    const ctx = canvas.getContext('2d', { alpha: false, willReadFrequently: false });
     if (!ctx) return;
 
     let frame = 0;
     let raf: number;
 
-    // Particles
+    // Throttle: only redraw every N frames → ~20fps target on 60hz displays
+    const SKIP = 3;
+
+    // Particles – fewer on mobile/low-res
+    const isMobile = window.innerWidth < 768;
+    const PARTICLE_COUNT = isMobile ? 6 : 12;
     const particles: { x: number; y: number; vy: number; vx: number; size: number; alpha: number }[] = [];
-    for (let i = 0; i < 15; i++) {
+    for (let i = 0; i < PARTICLE_COUNT; i++) {
       particles.push({
         x: Math.random() * 1000,
         y: Math.random() * 600,
@@ -46,7 +51,72 @@ export const CombatBackground: React.FC = React.memo(() => {
       gradientsRef.current = { sky, fog, dome: domeGlow };
     };
 
+    // Pre-render the static parliament silhouette to an offscreen canvas
+    // so the main loop only composites it instead of re-drawing 100+ path commands
+    const buildSilhouette = (W: number, H: number): HTMLCanvasElement => {
+      const off = document.createElement('canvas');
+      off.width = W;
+      off.height = H;
+      const oc = off.getContext('2d')!;
+      const silhouetteY = H * 0.52;
+      oc.fillStyle = 'rgba(8,3,3,0.92)';
+      oc.beginPath();
+      oc.moveTo(0, H);
+      oc.lineTo(0, silhouetteY + 30);
+      oc.lineTo(W * 0.05, silhouetteY + 30);
+      oc.lineTo(W * 0.05, silhouetteY + 10);
+      oc.lineTo(W * 0.1, silhouetteY + 10);
+      oc.lineTo(W * 0.1, silhouetteY);
+      oc.lineTo(W * 0.15, silhouetteY);
+      oc.lineTo(W * 0.15, silhouetteY - 20);
+      oc.lineTo(W * 0.18, silhouetteY - 20);
+      oc.lineTo(W * 0.18, silhouetteY - 40);
+      oc.lineTo(W * 0.21, silhouetteY - 40);
+      oc.lineTo(W * 0.21, silhouetteY - 80);
+      oc.lineTo(W * 0.215, silhouetteY - 100);
+      oc.lineTo(W * 0.22, silhouetteY - 80);
+      oc.lineTo(W * 0.25, silhouetteY - 80);
+      oc.lineTo(W * 0.25, silhouetteY - 50);
+      oc.lineTo(W * 0.3, silhouetteY - 50);
+      oc.lineTo(W * 0.3, silhouetteY - 60);
+      oc.lineTo(W * 0.35, silhouetteY - 60);
+      oc.lineTo(W * 0.35, silhouetteY - 70);
+      oc.lineTo(W * 0.38, silhouetteY - 70);
+      oc.lineTo(W * 0.38, silhouetteY - 110);
+      oc.bezierCurveTo(W * 0.42, silhouetteY - 165, W * 0.58, silhouetteY - 165, W * 0.62, silhouetteY - 110);
+      oc.lineTo(W * 0.62, silhouetteY - 70);
+      oc.lineTo(W * 0.65, silhouetteY - 70);
+      oc.lineTo(W * 0.65, silhouetteY - 60);
+      oc.lineTo(W * 0.7, silhouetteY - 60);
+      oc.lineTo(W * 0.7, silhouetteY - 50);
+      oc.lineTo(W * 0.75, silhouetteY - 50);
+      oc.lineTo(W * 0.75, silhouetteY - 80);
+      oc.lineTo(W * 0.78, silhouetteY - 80);
+      oc.lineTo(W * 0.785, silhouetteY - 100);
+      oc.lineTo(W * 0.79, silhouetteY - 80);
+      oc.lineTo(W * 0.79, silhouetteY - 40);
+      oc.lineTo(W * 0.82, silhouetteY - 40);
+      oc.lineTo(W * 0.82, silhouetteY - 20);
+      oc.lineTo(W * 0.85, silhouetteY - 20);
+      oc.lineTo(W * 0.85, silhouetteY);
+      oc.lineTo(W * 0.9, silhouetteY);
+      oc.lineTo(W * 0.9, silhouetteY + 10);
+      oc.lineTo(W * 0.95, silhouetteY + 10);
+      oc.lineTo(W * 0.95, silhouetteY + 30);
+      oc.lineTo(W, silhouetteY + 30);
+      oc.lineTo(W, H);
+      oc.closePath();
+      oc.fill();
+      return off;
+    };
+
+    let silhouetteCanvas: HTMLCanvasElement | null = null;
+
     const draw = () => {
+      raf = requestAnimationFrame(draw);
+      // Throttle: only paint every SKIP frames
+      if (frame % SKIP !== 0) { frame++; return; }
+
       const W = canvas.width;
       const H = canvas.height;
       if (!gradientsRef.current) updateGradients(W, H);
@@ -58,58 +128,11 @@ export const CombatBackground: React.FC = React.memo(() => {
       ctx.fillStyle = grads.fog;
       ctx.fillRect(0, 0, W, H);
 
-      // Parliament silhouette
-      const silhouetteY = H * 0.52;
-      ctx.fillStyle = 'rgba(8,3,3,0.92)';
-      ctx.beginPath();
-      ctx.moveTo(0, H);
-      ctx.lineTo(0, silhouetteY + 30);
-      ctx.lineTo(W * 0.05, silhouetteY + 30);
-      ctx.lineTo(W * 0.05, silhouetteY + 10);
-      ctx.lineTo(W * 0.1, silhouetteY + 10);
-      ctx.lineTo(W * 0.1, silhouetteY);
-      ctx.lineTo(W * 0.15, silhouetteY);
-      ctx.lineTo(W * 0.15, silhouetteY - 20);
-      ctx.lineTo(W * 0.18, silhouetteY - 20);
-      ctx.lineTo(W * 0.18, silhouetteY - 40);
-      ctx.lineTo(W * 0.21, silhouetteY - 40);
-      ctx.lineTo(W * 0.21, silhouetteY - 80);
-      ctx.lineTo(W * 0.215, silhouetteY - 100);
-      ctx.lineTo(W * 0.22, silhouetteY - 80);
-      ctx.lineTo(W * 0.25, silhouetteY - 80);
-      ctx.lineTo(W * 0.25, silhouetteY - 50);
-      ctx.lineTo(W * 0.3, silhouetteY - 50);
-      ctx.lineTo(W * 0.3, silhouetteY - 60);
-      ctx.lineTo(W * 0.35, silhouetteY - 60);
-      ctx.lineTo(W * 0.35, silhouetteY - 70);
-      ctx.lineTo(W * 0.38, silhouetteY - 70);
-      ctx.lineTo(W * 0.38, silhouetteY - 110);
-      ctx.bezierCurveTo(W * 0.42, silhouetteY - 165, W * 0.58, silhouetteY - 165, W * 0.62, silhouetteY - 110);
-      ctx.lineTo(W * 0.62, silhouetteY - 70);
-      ctx.lineTo(W * 0.65, silhouetteY - 70);
-      ctx.lineTo(W * 0.65, silhouetteY - 60);
-      ctx.lineTo(W * 0.7, silhouetteY - 60);
-      ctx.lineTo(W * 0.7, silhouetteY - 50);
-      ctx.lineTo(W * 0.75, silhouetteY - 50);
-      ctx.lineTo(W * 0.75, silhouetteY - 80);
-      ctx.lineTo(W * 0.78, silhouetteY - 80);
-      ctx.lineTo(W * 0.785, silhouetteY - 100);
-      ctx.lineTo(W * 0.79, silhouetteY - 80);
-      ctx.lineTo(W * 0.79, silhouetteY - 40);
-      ctx.lineTo(W * 0.82, silhouetteY - 40);
-      ctx.lineTo(W * 0.82, silhouetteY - 20);
-      ctx.lineTo(W * 0.85, silhouetteY - 20);
-      ctx.lineTo(W * 0.85, silhouetteY);
-      ctx.lineTo(W * 0.9, silhouetteY);
-      ctx.lineTo(W * 0.9, silhouetteY + 10);
-      ctx.lineTo(W * 0.95, silhouetteY + 10);
-      ctx.lineTo(W * 0.95, silhouetteY + 30);
-      ctx.lineTo(W, silhouetteY + 30);
-      ctx.lineTo(W, H);
-      ctx.closePath();
-      ctx.fill();
+      // Blit pre-rendered silhouette (single drawImage call instead of 40+ lineTo calls)
+      if (silhouetteCanvas) ctx.drawImage(silhouetteCanvas, 0, 0);
 
-      // Windows glow
+      // Windows glow – slow sine, low cost
+      const silhouetteY = H * 0.52;
       const t = frame * 0.02;
       ctx.fillStyle = `rgba(212,175,55,${0.04 + Math.sin(t) * 0.02})`;
       for (let wi = 0; wi < 8; wi++) {
@@ -117,30 +140,29 @@ export const CombatBackground: React.FC = React.memo(() => {
         ctx.fillRect(wx, silhouetteY - 60, 4, 6);
       }
 
-      // Red glow from dome (using cached gradient)
+      // Dome glow (cached gradient)
       ctx.globalAlpha = 0.8 + Math.sin(t * 0.7) * 0.2;
       ctx.fillStyle = grads.dome;
       ctx.fillRect(W * 0.3, silhouetteY - 260, W * 0.4, 240);
       ctx.globalAlpha = 1.0;
 
-      // Floating particles (simplified, no save/restore)
+      // Floating particles
       particles.forEach(p => {
         p.y += p.vy;
         p.x += p.vx + Math.sin(frame * 0.01 + p.x) * 0.2;
         if (p.y < -10) { p.y = H + 10; p.x = Math.random() * W; }
-
         ctx.fillStyle = `rgba(212,175,55,${p.alpha})`;
         ctx.fillRect(p.x, p.y, p.size, p.size * 0.6);
       });
 
       frame++;
-      raf = requestAnimationFrame(draw);
     };
 
     const resize = () => {
       canvas.width = canvas.offsetWidth;
       canvas.height = canvas.offsetHeight;
       updateGradients(canvas.width, canvas.height);
+      silhouetteCanvas = buildSilhouette(canvas.width, canvas.height);
     };
     resize();
     const ro = new ResizeObserver(resize);
@@ -152,7 +174,11 @@ export const CombatBackground: React.FC = React.memo(() => {
 
   return (
     <div className="absolute inset-0 overflow-hidden pointer-events-none">
-      <canvas ref={canvasRef} className="absolute inset-0 w-full h-full" />
+      <canvas
+        ref={canvasRef}
+        className="absolute inset-0 w-full h-full"
+        style={{ willChange: 'contents' }}
+      />
       <div
         className="absolute inset-0"
         style={{
@@ -163,4 +189,3 @@ export const CombatBackground: React.FC = React.memo(() => {
     </div>
   );
 });
-

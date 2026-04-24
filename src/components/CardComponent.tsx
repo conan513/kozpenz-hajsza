@@ -1,4 +1,4 @@
-import React from 'react';
+import React, { useMemo } from 'react';
 import { motion } from 'motion/react';
 import { Card, GameState } from '../types';
 import { Sword, Shield, Zap, Sparkles, AlertCircle } from 'lucide-react';
@@ -10,8 +10,8 @@ interface CardProps {
   disabled?: boolean;
 }
 
-// SVG card artwork per type
-const CardArtwork: React.FC<{ type: string }> = ({ type }) => {
+// SVG card artwork per type – memoised separately so it never re-renders
+const CardArtwork: React.FC<{ type: string }> = React.memo(({ type }) => {
   switch (type) {
     case 'Attack':
       return (
@@ -68,10 +68,11 @@ const CardArtwork: React.FC<{ type: string }> = ({ type }) => {
         </svg>
       );
   }
-};
+});
 
 const CardComponent: React.FC<CardProps> = React.memo(({ card, gameState, onClick, disabled }) => {
-  const getDynamicDescription = () => {
+  // Memoised: only recalculate when relevant status effects or view change
+  const dynamicDescription = useMemo(() => {
     if (!gameState.player || gameState.view !== 'Combat') return card.description;
     const strength = gameState.player.statusEffects.find(s => s.type === 'Strength')?.stacks || 0;
     const dexterity = gameState.player.statusEffects.find(s => s.type === 'Dexterity')?.stacks || 0;
@@ -89,9 +90,9 @@ const CardComponent: React.FC<CardProps> = React.memo(({ card, gameState, onClic
       return `<span class="${color} font-bold">${n}</span>${suffix}`;
     });
     return desc;
-  };
+  }, [card.description, gameState.view, gameState.player?.statusEffects]);
 
-  const getCardStyle = () => {
+  const cardStyle = useMemo(() => {
     if (card.characterClass === 'Colorless') return 'border-gray-400/70 bg-gradient-to-br from-gray-700 to-gray-800';
     switch (card.type) {
       case 'Attack': return 'border-[#8B0000]/80 bg-gradient-to-br from-[#200808] via-[#3a0c0c] to-[#4A0E0E]';
@@ -100,31 +101,31 @@ const CardComponent: React.FC<CardProps> = React.memo(({ card, gameState, onClic
       case 'Hex':    return 'border-red-900/70 bg-gradient-to-br from-[#0d0404] via-[#1a0808] to-[#1f0a0a]';
       default:       return 'border-bento-border bg-bento-panel';
     }
-  };
+  }, [card.type, card.characterClass]);
 
-  const getRarityClass = () => {
+  const rarityClass = useMemo(() => {
     if (card.rarity === 'Rare')     return 'ring-2 ring-bento-gold/80 drop-shadow-[0_0_14px_rgba(212,175,55,0.6)] card-rare-shimmer';
     if (card.rarity === 'Uncommon') return 'ring-1 ring-gray-300/60 drop-shadow-[0_0_8px_rgba(200,200,200,0.4)] card-uncommon-shimmer';
     return '';
-  };
+  }, [card.rarity]);
 
-  const getIcon = () => {
+  const icon = useMemo(() => {
     switch (card.type) {
       case 'Attack': return <Sword size={16} className="text-red-400" />;
       case 'Skill':  return <Shield size={16} className="text-teal-400" />;
       case 'Power':  return <Sparkles size={16} className="text-purple-300" />;
       case 'Hex':    return <AlertCircle size={16} className="text-red-700" />;
     }
-  };
+  }, [card.type]);
 
-  const typeLabel = () => {
+  const typeLabel = useMemo(() => {
     switch (card.type) {
       case 'Attack': return 'Támadás';
       case 'Skill':  return 'Törvény';
       case 'Power':  return 'Rendelet';
       case 'Hex':    return 'Átok';
     }
-  };
+  }, [card.type]);
 
   return (
     <motion.div
@@ -132,9 +133,10 @@ const CardComponent: React.FC<CardProps> = React.memo(({ card, gameState, onClic
       whileTap={{ scale: 0.95 }}
       onClick={disabled ? undefined : () => onClick?.(card)}
       className={`relative w-28 h-40 md:w-32 md:h-44 rounded-sm border-2 p-1.5 md:p-2 lux-shadow cursor-pointer select-none overflow-hidden
-        ${getCardStyle()} ${getRarityClass()}
+        ${cardStyle} ${rarityClass}
         ${disabled ? 'opacity-40 grayscale cursor-not-allowed shadow-none' : 'opacity-100'}
       `}
+      style={{ willChange: 'transform' }}
     >
       {/* Paper texture */}
       <div className="absolute inset-0 paper-texture opacity-50" />
@@ -163,20 +165,19 @@ const CardComponent: React.FC<CardProps> = React.memo(({ card, gameState, onClic
         <div className="w-10 h-10 opacity-80 drop-shadow-lg">
           <CardArtwork type={card.type} />
         </div>
-        {/* Type icon overlay */}
-        <div className="absolute bottom-1 left-1.5 opacity-50">{getIcon()}</div>
+        <div className="absolute bottom-1 left-1.5 opacity-50">{icon}</div>
       </div>
 
       {/* Description */}
       <div className="relative z-10 bg-black/55 rounded-sm p-1.5 h-[52px] flex flex-col justify-center border-t border-white/5">
         <div className="text-bento-text-dim font-mono text-[8px] md:text-[9px] leading-snug text-center"
-          dangerouslySetInnerHTML={{ __html: getDynamicDescription() }} />
+          dangerouslySetInnerHTML={{ __html: dynamicDescription }} />
       </div>
 
       {/* Footer: type label */}
       <div className="absolute bottom-1 right-2 z-10">
         <span className="text-[6px] md:text-[7px] uppercase tracking-widest text-bento-gold/60 font-serif font-bold italic">
-          {typeLabel()}
+          {typeLabel}
         </span>
       </div>
 
