@@ -517,10 +517,10 @@ export default function App() {
             {state.view === 'Title' && (
               <motion.div key="title" initial={{ opacity: 0 }} animate={{ opacity: 1 }} exit={{ opacity: 0 }} className="min-h-screen flex flex-col items-center justify-center p-8 bg-bento-bg relative overflow-hidden">
                 <div className="absolute inset-0 paper-texture opacity-30" />
-                <div className="absolute inset-0" style={{ background: 'radial-gradient(ellipse at 50% 70%, rgba(185,28,28,0.15) 0%, transparent 65%)' }} />
+                <div className="absolute inset-0 pointer-events-none" style={{ background: 'radial-gradient(ellipse at 50% 70%, rgba(185,28,28,0.15) 0%, transparent 65%)' }} />
                 {[...Array(12)].map((_, i) => (
                   <motion.div key={i}
-                    className="absolute w-1 h-1 rounded-full bg-bento-gold/40"
+                    className="absolute w-1 h-1 rounded-full bg-bento-gold/40 pointer-events-none"
                     style={{ left: `${10 + i * 7}%`, top: `${20 + Math.sin(i) * 40}%` }}
                     animate={{ y: [0, -30, 0], opacity: [0.2, 0.6, 0.2] }}
                     transition={{ duration: 3 + i * 0.4, repeat: Infinity, delay: i * 0.3 }}
